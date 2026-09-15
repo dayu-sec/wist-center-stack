@@ -1,0 +1,5 @@
+# 开发态运行期产物（本地 JSON store / 制品镜像 / 中心自签材料）
+.run/
+
+# macOS
+.DS_Store

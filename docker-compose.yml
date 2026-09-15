@@ -1,0 +1,67 @@
+# wist-center-stack — 开发态依赖编排（仅第三方服务）
+#
+# 本文件目前**只含第三方依赖**（PostgreSQL / VictoriaMetrics），供开发态
+# ./sysrun/start-pg.sh、./sysrun/start-vm.sh 复用——与 wist-gateway-stack 同一做法：
+# 开发态与容器态共用一份容器参数，避免两处漂移。
+#
+# 注意：`center` / `web` 两个服务**尚未加入本文件**。原因是它们所需的镜像还不存在：
+# wist-center、wist-center-web 两个仓库都还没有 Dockerfile，release 流水线也不产出镜像
+# （wist-center 的 release.yml 目前只出二进制 tarball）。等这两个镜像就绪后再补齐，
+# 以免出现"引用不存在镜像"的 compose。
+
+services:
+  # ── 中心存储：PostgreSQL（PgStore）──
+  #
+  # 端口约定：宿主 55432 -> 容器 5432，与 wist-center 自带 docker-compose.yml 一致。
+  # 表结构由 ../wist-center/docker/initdb/01_schema.sql 在**首次**初始化数据卷时建立
+  # （docker-entrypoint-initdb.d 只在空 data 目录时执行）。
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    ports:
+      - "55432:5432"
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: insight_demo
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d insight_demo"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - postgres16-data:/var/lib/postgresql/data
+      - ../wist-center/docker/initdb:/docker-entrypoint-initdb.d:ro
+
+  # ── 状态历史时序库：VictoriaMetrics ──
+  #
+  # 端口约定：宿主 18429 -> 容器 8428（与 wist-gateway-stack 对齐）。
+  # 中心配置 WARP_INSIGHT_CENTER_VICTORIAMETRICS_URL 后，每次状态上报会额外推送指标。
+  victoria-metrics:
+    image: victoriametrics/victoria-metrics:v1.133.0
+    restart: unless-stopped
+    ports:
+      - "18429:8428"
+    volumes:
+      - metrics_data:/storage
+    command:
+      - --envflag.enable
+      - --envflag.prefix=VM_
+      - --loggerFormat=json
+      - --retentionPeriod=${RETENTION_PERIOD:-6}
+      - --storageDataPath=/storage
+      - --search.latencyOffset=0s
+    environment:
+      - TZ=Asia/Shanghai
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8428/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  postgres16-data:
+    driver: local
+  metrics_data:
+    driver: local
