@@ -40,6 +40,15 @@ CENTER_TLS_CA_KEY="${CENTER_TLS_DIR}/ca.key.pem"
 CENTER_TLS_CERT="${CENTER_TLS_DIR}/server.crt.pem"
 CENTER_TLS_KEY="${CENTER_TLS_DIR}/server.key.pem"
 
+# ── gwlinkd（宿主侧常驻，把本机网关栈接到 center）──
+# 它是对中心做 mTLS 的客户端：首跑 link-upstream/register，之后周期 status/renew。
+GWLINKD_CRATE="${ROOT_DIR}/wist-gwlinkd"
+GWLINKD_DIR="${STACK_ROOT}/.run/gwlinkd"
+GWLINKD_CONFIG="${GWLINKD_DIR}/gwlinkd.toml"
+GWLINKD_LOG="${GWLINKD_DIR}/gwlinkd.log"
+GWLINKD_PID_FILE="${STACK_ROOT}/.run/gwlinkd.pid"
+GWLINKD_BOOTSTRAP=""
+
 # ── 端口 / 地址（覆盖用同名 env；PG_PORT、VM_PORT 与 docker-compose.yml 同名同值）──
 CENTER_ADDR="${WARP_INSIGHT_CENTER_LISTEN:-127.0.0.1:3100}"
 CENTER_PORT="${CENTER_ADDR##*:}"
@@ -308,6 +317,66 @@ ensure_center_tls() {
   chmod 600 "${CENTER_TLS_CA_KEY}" "${CENTER_TLS_KEY}"
   echo "  信任根（CA-S）：${CENTER_TLS_CA_CERT}"
   echo "  服务器证书：${CENTER_TLS_CERT}"
+}
+
+# 构建 wist-gwlinkd（增量）。
+build_gwlinkd() {
+  echo "== 构建 wist-gwlinkd（增量）=="
+  cargo build --manifest-path "${GWLINKD_CRATE}/Cargo.toml"
+}
+
+# 通过 admin API 建一个网关实例，拿到 gateway_id + 一次性置备引导 Token；
+# 写 gwlinkd.toml（endpoint=https、trust_bundle=CA-S、state_dir、gateway_id）。
+# 前提：center 以 WIST_CENTER_TLS=1 起（提供 https + CA-S）。
+ensure_gwlinkd_config() {
+  center_tls_enabled || {
+    echo "需要 WIST_CENTER_TLS=1（gwlinkd 走 mTLS，trust_bundle 用 CA-S）" >&2
+    return 1
+  }
+  ensure_center_tls
+  local token
+  token="$(center_admin_token)"
+  if [[ -z "${token}" ]]; then
+    echo "读不到 admin token（${CENTER_CONFIG}）" >&2
+    return 1
+  fi
+  mkdir -p "${GWLINKD_DIR}/state"
+  echo "== 通过 admin API 创建网关实例 =="
+  local resp gw boot
+  resp="$(curl -sk -X POST "https://${CENTER_ADDR}/api/v1/admin/gateways/instances" \
+    -H "authorization: Bearer ${token}" -H "content-type: application/json" \
+    -d '{"gateway_name":"gw-local","requested_by":"dev"}')"
+  gw="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['instance']['gateway_id'])" "${resp}" 2>/dev/null || true)"
+  boot="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['install']['setup_token'])" "${resp}" 2>/dev/null || true)"
+  if [[ -z "${gw}" || -z "${boot}" ]]; then
+    echo "创建网关实例失败：${resp}" >&2
+    return 1
+  fi
+  cat >"${GWLINKD_CONFIG}" <<EOF
+control_center_endpoint = "https://${CENTER_ADDR}"
+trust_bundle = "${CENTER_TLS_CA_CERT}"
+state_dir = "${GWLINKD_DIR}/state"
+gateway_id = "${gw}"
+EOF
+  GWLINKD_BOOTSTRAP="${boot}"
+  echo "  网关实例：${gw}"
+  echo "  gwlinkd 配置：${GWLINKD_CONFIG}"
+}
+
+# 启动 gwlinkd（后台）。首次带 bootstrap token；之后有凭据则免。
+start_gwlinkd() {
+  local bin="${GWLINKD_CRATE}/target/debug/wist-gwlinkd"
+  [[ -x "${bin}" ]] || {
+    echo "缺 gwlinkd 二进制：${bin}（先 build_gwlinkd）" >&2
+    return 1
+  }
+  echo "== 启动 wist-gwlinkd（连 https://${CENTER_ADDR}）=="
+  WIST_GWLINKD_CONFIG="${GWLINKD_CONFIG}" \
+    WIST_GWLINKD_BOOTSTRAP_TOKEN="${GWLINKD_BOOTSTRAP}" \
+    "${bin}" run >"${GWLINKD_LOG}" 2>&1 &
+  GWLINKD_PID=$!
+  write_pidfile "${GWLINKD_PID_FILE}" "${GWLINKD_PID}"
+  echo "  pid=${GWLINKD_PID}；日志：${GWLINKD_LOG}"
 }
 
 # 启动中心后端（后台）；需先 resolve_dependencies + build_center + ensure_center_config。
