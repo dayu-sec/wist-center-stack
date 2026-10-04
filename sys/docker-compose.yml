@@ -1,0 +1,124 @@
+# wist-center-stack — 中心后端(wist-center) + 管理前端(wist-center-web) + 观测 一站式编排
+#
+# 端口约定（宿主:容器；宿主端口的值见 sys/setting/vars.yml，现场在 values/value.yml 覆盖）：
+#   center           ${CENTER_PORT}:3100   中心后端 HTTP API（默认 3100）
+#   web              ${WEB_PORT}:80        前端入口（nginx 静态 + /api 反代；默认 18080）
+#   postgres         ${PG_PORT}:5432       中心存储 PgStore（默认 55432）
+#   victoria-metrics ${VM_PORT}:8428       指标/历史时序（默认 28429）
+#
+# 容器内端口是**应用契约**，写死（3100/80/5432/8428）；宿主端口才是变量 —— 两边不要写混。
+#
+# 值来源（gops 系统约定）：
+#   - 随环境/客户变化的量（镜像源与 tag、宿主端口、域名、挂载路径）统一用 Compose 原生 `${VAR}`
+#     占位，定义在 sys/setting/vars.yml；`gops sys update` → sys/merged_vars.yml，
+#     `gops sys localize` → 栈根 .env。现场覆盖写 values/value.yml（该文件版本化）。
+#   - 密钥（admin token / hmac secret）用 `${SEC_xxx}` 占位，由 `gops run start` 从
+#     ~/.galaxy/sec_value.yml 注入、不落盘。键：center_admin_token / center_hmac_secret。
+#   - 容器内端口/路径/服务名是应用契约，直接写在这里。
+#
+# 与 wist-center 自带 docker-compose.yml 的关系：那份只含第三/依赖（postgres + victoriametrics），
+# 供中心源码开发用；本份是**发布态**整栈编排（含 center/web），起停走 `gops run`。
+#
+# 单实例保障：四个服务都钉**固定 `container_name`**（不是 compose 默认的 `<项目>-<服务>-1`）。
+# 为什么必须钉：默认名里带项目名，而项目名默认取目录名 —— 两份同名目录的栈会共用同一批容器名，
+# 第二个 `up` 不会报错，而是**悄悄接管/顶掉**第一个的容器。钉死后第二个栈的 `up` 会当场报名字冲突。
+
+services:
+  # ── 中心存储：PostgreSQL（PgStore）──
+  #
+  # 表结构由 ${PG_INITDB_DIR}/01_schema.sql 在**首次**初始化数据卷时建立
+  # （docker-entrypoint-initdb.d 只在空 data 目录时执行）。库里是网关注册表 / 凭据 / 状态快照。
+  # 说明：库结构与 `wist-center/docker/initdb/01_schema.sql` 同源，改中心 schema 时两处要同步。
+  postgres:
+    container_name: wist-center-stack-postgres
+    image: postgres:${PG_TAG}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: ${PG_DB}
+      TZ: ${TZ}
+    ports:
+      - "${PG_PORT}:5432"
+    volumes:
+      - postgres16-data:/var/lib/postgresql/data
+      - ${PG_INITDB_DIR}:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER} -d ${PG_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # ── 观测：指标/历史时序 ──
+  victoria-metrics:
+    container_name: wist-center-stack-vm
+    image: victoriametrics/victoria-metrics:${VM_TAG}
+    restart: unless-stopped
+    ports:
+      - "${VM_PORT}:8428"
+    volumes:
+      - metrics_data:/storage
+    command:
+      - --envflag.enable
+      - --envflag.prefix=VM_
+      - --loggerFormat=json
+      - --retentionPeriod=${RETENTION_PERIOD}
+      - --storageDataPath=/storage
+      - --search.latencyOffset=0s
+    environment:
+      - TZ=${TZ}
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8428/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── 控制中心后端 ──
+  #
+  # 配置与密钥**卷挂载注入**，不烘焙进镜像：${CENTER_CONFIG_DIR}（渲染出的 wist-center.toml + CA）
+  # 挂到容器 /wist-center，容器内 WIST_CENTER_CONFIG 指向它。
+  # 容器内 listen_addr 由模板写成 0.0.0.0:3100（代码默认 127.0.0.1:3100，端口映射不进来）。
+  # 中心自身不做 TLS，HTTPS 由前面的反代终止；public_url 的 host 必须落在服务器证书 SAN 内。
+  # 运行身份 999:999（镜像里 `useradd -r wist`），宿主侧由 scripts/align-host-perms.sh 对齐。
+  center:
+    container_name: wist-center-stack-center
+    image: ${IMAGE_SPC}/wist-center:${CENTER_TAG}
+    user: "999:999"
+    restart: unless-stopped
+    environment:
+      WIST_CENTER_CONFIG: /wist-center/wist-center.toml
+      # 模板里 admin_token / hmac_secret 写的是 ${WIST_CENTER_*}，由这里从 gops 密钥注入。
+      WIST_CENTER_ADMIN_TOKEN: ${SEC_CENTER_ADMIN_TOKEN}
+      WIST_CENTER_HMAC_SECRET: ${SEC_CENTER_HMAC_SECRET}
+    volumes:
+      - ${CENTER_CONFIG_DIR}:/wist-center
+    ports:
+      - "${CENTER_PORT}:3100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      victoria-metrics:
+        condition: service_healthy
+
+  # ── 前端（nginx：静态托管 + /api 反代到 center）──
+  #
+  # 镜像内**不含**站点配置（与 wist-gateway-web 同构）：由 sys/configs/web/nginx.conf.tpl 渲染出
+  # configs/web/nginx.conf 后挂到 /etc/nginx/conf.d/default.conf。
+  # 本页 nginx 在容器内 80 上跑**明文** HTTP，TLS 由前面的反代终止（与中心自身不做 TLS 一致）。
+  web:
+    container_name: wist-center-stack-web
+    image: ${IMAGE_SPC}/wist-center-web:${WEB_TAG}
+    restart: unless-stopped
+    volumes:
+      - ${WEB_NGINX_CONF}:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "${WEB_PORT}:80"
+    depends_on:
+      - center
+
+volumes:
+  postgres16-data:
+    driver: local
+  metrics_data:
+    driver: local

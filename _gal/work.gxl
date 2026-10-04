@@ -1,0 +1,10 @@
+extern mod operators { path = "./sys/workflows"; };
+
+mod envs  {
+
+  #[usage(desp="default", color="green")]
+  env default     {}
+}
+
+mod main : operators {
+}

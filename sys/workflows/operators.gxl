@@ -1,0 +1,43 @@
+// 系统运维流程（**本地定义**，不引外部 ops-gxl 模块）。
+//
+// 由 _gal/work.gxl 的 `mod main : operators` 纳入，gops 以 `gx run <flow>` 调用。
+// 约定：GXL 行注释是 //（# 是注解语法 #[...]，不是注释）。
+mod operators {
+
+  // 阶段扩展点：`gops sys localize` 写完系统根 .env 之后就执行 `gx run localize`
+  // （galaxy-ops >= 1.3.4 / galaxy-flow >= 0.14）。合并后的配置以**环境变量**注入本子进程，
+  // 用 $(printenv XXX) 读。每个动作都**幂等**（存在即跳过）——证书/密钥绝不能每次重生成。
+  flow localize {
+    // 0) 确保运行期目录存在（localize 渲染目标落在 configs/ 下；Docker 会在 up 时自建，但那时属主
+    //    是 root，所以我们先建、随后 align-host-perms 归位）。
+    gx.cmd ( "mkdir -p configs/center configs/web" );
+    // ① 备料控制中心：CA（信任根 + 服务器证书）+ 渲染值 wist-center.value.json（缺什么补什么）。
+    //    CA 已存在即跳过（换公章会让所有已分发信任根失效）。域名取合并后的值 CENTER_DOMAIN。
+    gx.cmd ( "./scripts/init-center.sh configs/center $(printenv CENTER_DOMAIN)" );
+    // ② 渲染中心运行配置：模板 + value.json → configs/center/wist-center.toml（依赖 ①）。
+    //    模板里的 admin_token / hmac_secret 写的是 ${WIST_CENTER_*}，由容器环境变量（compose
+    //    从 gops 密钥注入）在运行期解析 —— 明文不落盘。
+    gx.tpl (
+      tpl  : "./sys/configs/center/wist-center.toml.tpl",
+      dst  : "./configs/center/wist-center.toml",
+      file : "./configs/center/wist-center.value.json"
+    );
+    // ③ 前端站点配置：备料渲染值（脚本）→ gx.tpl → configs/web/nginx.conf。
+    //    渲染值必须走脚本，不能在这里 printf：GXL 字符串**不还原 `\"`**，而 Ubuntu 的 /bin/sh 是
+    //    dash（printf 不认 `\"`，会把反斜杠写进文件）→ 非法 JSON → gx.tpl 报 parse json data file。
+    //    macOS 上 sh 是 bash（printf 吃掉反斜杠）所以看不出问题。详见脚本头部注释。
+    gx.cmd ( "./scripts/init-web-conf.sh $(printenv CENTER_DOMAIN)" );
+    gx.tpl (
+      tpl  : "./sys/configs/web/nginx.conf.tpl",
+      dst  : "./configs/web/nginx.conf",
+      file : "./configs/web/nginx.value.json"
+    );
+    // ④ 宿主侧属主/权限对齐（Linux 专有；macOS/OrbStack 直接跳过）：
+    //    center **固定以 999:999 运行**（compose 里显式钉死），而 Linux 的 bind 挂载**不改属主**
+    //    —— 未对齐就是稳定故障：容器写不出 state/ 与 artifacts/、读不到 ca/ 里的私钥。
+    //    还必须在 `docker compose up` **之前**：Docker 会把缺失的挂载源目录建成 root:root，
+    //    属主一旦是 root，之后的部署账号就写不动了。
+    gx.cmd ( "./scripts/align-host-perms.sh" );
+  }
+
+}

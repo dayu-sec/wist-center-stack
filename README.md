@@ -2,115 +2,209 @@
 
 `wist-center`（中心后端） + `wist-center-web`（管理前端） 的一站式编排。
 
+本仓**只做编排**：两个组件的镜像制品来自各自 release 流水线，这里引用它们并负责把它们连起来跑。
+
 ## 两种运行方式
 
-- **开发态**（当前已可用）：不依赖镜像，直接跑本地编译的二进制 + vite dev（`sysrun/`）。
-- **发布态**（待补）：Docker 编排，`docker compose up -d` 拉起整个栈 —— **尚未提供**。
+- **发布态**：Docker 编排（gops 系统，`kind: docker-compose`），`gops run start` 拉起整个栈 ——
+  变量定义与本地化见「发布态」。
+- **开发态**：不依赖镜像，直接跑本地编译的二进制 + vite dev（`dev/`）。
 
-> **发布态进展**：镜像能力已就绪 —— `wist-center` 补了 `docker/Dockerfile`，`wist-center-web`
-> 也有 Dockerfile，两个仓的 release 流水线在打 tag 时会构建多架构镜像并**双推**
-> `ghcr.io/dayu-sec/*` 与 `dy-sec.tencentcloudcr.com/cloud/*`（腾讯云 TCR，国内拉取快）。
-> 但**镜像要等发一次 tag 才存在**，此刻还没有，所以本仓暂不写 `center` / `web` 两个服务，
-> 避免出现“引用不存在镜像”的编排。
->
-> 补齐时与 `wist-gateway-stack` 同构，两处要特别处理：
->
-> - `center`：挂载配置目录（`wist-center.toml` + state），且容器内 `listen_addr` 必须是
->   `0.0.0.0:3100`（代码默认 `127.0.0.1:3100`）；
-> - `web`：nginx 静态托管 + `/api` 反代到 `center`，站点配置需自备（镜像内不含）。
->   中心自身不做 TLS，对外 HTTPS 由前面的反代终止，`public_url` 的 host 要落在服务器证书 SAN 内。
->   端口需与网关栈的 `8443` 避让。
+两者共用**同一份** `sys/docker-compose.yml`（发布态整栈，开发态只取其 `postgres` / `victoria-metrics`
+两个依赖服务），避免两处漂移。
 
 ## 组件
 
-| 服务 | 作用 | 端口 | 来源 |
+| 服务 | 作用 | 端口（宿主:容器） | 镜像来源 |
 |---|---|---|---|
-| `center` | 中心后端（HTTP API） | 开发态本地 `3100` | `wist-center`，本地 `cargo build` |
-| `web` | 管理前端（开发态 vite dev；容器态将改为 nginx 静态 + `/api` 反代） | 开发态本地 `5173` | `wist-center-web`，本地 `npm run dev` |
-| `postgres` | 中心存储（`PgStore`；不可达时中心退回 JSON 文件存储） | `55432:5432` | `postgres:16` |
-| `victoria-metrics` | 状态历史时序库 | `28429:8428` | `victoriametrics/victoria-metrics` |
+| `center` | 中心后端（HTTP API） | `${CENTER_PORT}:3100` | `dy-sec.tencentcloudcr.com/cloud/wist-center` |
+| `web` | 管理前端入口（nginx：静态 + `/api` 反代到 center） | `${WEB_PORT}:80`（HTTP） | `dy-sec.tencentcloudcr.com/cloud/wist-center-web` |
+| `postgres` | 中心存储（PgStore） | `${PG_PORT}:5432` | `postgres:${PG_TAG}` |
+| `victoria-metrics` | 状态历史时序库 | `${VM_PORT}:8428` | `victoriametrics/victoria-metrics` |
 
-两处**有意不做**：
-
-- **不含 WarpParse（数据面）**：ELT 是网关/数据侧的事，中心不消费日志（`wist-center` 自带 compose 也只有 postgres + VM）。
-- **不含对象存储**：中心的版本发布制品默认落本地 `artifact_dir`；需要 S3 兼容存储时再配 `WARP_INSIGHT_CENTER_OBJECT_STORAGE_*`。
-
-> **端口避让**：本栈的 VictoriaMetrics 用 `28429`，**刻意避开** `wist-gateway-stack` 的 `18429`——
-> 两个栈同机同时运行是常态，各自跑独立实例（都是开发/测试态，不共享）。其余端口与网关栈
-> （`3000` / `5174`）也不冲突：中心栈是 `3100` / `5173` / `55432`。
-> 宿主端口都可用 `PG_PORT` / `VM_PORT` 覆盖（在 `sysrun/start.sh` 与 `docker-compose.yml` 里同名同值）。
+> **镜像两处源**：两个发布流水线都双推 —— `ghcr.io/dayu-sec/*`（境外）与
+> `dy-sec.tencentcloudcr.com/cloud/*`（腾讯云 TCR，国内快）。compose 里的镜像源与 tag 都是变量：
+> 改**产品默认**改 `sys/setting/vars.yml`，改**本环境用什么**改 `values/value.yml`（推荐）。
+>
+> **TLS**：中心与前端入口**自身都不做 TLS**（center 是明文 HTTP，web nginx 也在容器内 80 跑明文）。
+> 对外 HTTPS 由**前面的反代**终止，并由它持有控制中心服务器证书；`CENTER_DOMAIN` / `public_url`
+> 的 host 必须落在该证书 SAN 内（`scripts/gen-center-ca.sh` 可生成一整套 CA + 服务器证书）。
+>
+> **端口避让**：本栈 VictoriaMetrics 用 `28429`、前端入口 `18080`，**刻意避开** `wist-gateway-stack`
+> 的 `18429` / `8443` —— 两个栈同机同时运行是常态，各自跑独立实例。
 
 ## 目录
 
 ```
 wist-center-stack/
-  docker-compose.yml       # 仅第三方依赖（postgres / victoria-metrics），开发态复用
-  sysrun/                  # 开发态：本地二进制 + vite
-    lib.sh                 # 公共函数（下面几个入口脚本 source 它）
-    start-deps.sh / stop-deps.sh      # 第三方依赖
+  sys-prj.yml               # gops 项目描述（ignore / preserve / backup）
+  sys/                      # gops 系统定义（声明文件；随库入库/交付）
+    docker-compose.yml      # 发布态：Docker 编排（易变量用 ${VAR} 占位）
+    sys_model.yml           # kind: docker-compose（gops run 据此分发到 docker compose）
+    setting/vars.yml        # 系统变量定义（改默认值改这里）
+    merged_vars.yml         # 生成：gops sys update
+    db/initdb/01_schema.sql # PostgreSQL 建表（首次初始化数据卷时执行；与 wist-center 同源）
+    workflows/operators.gxl # 系统运维流程（本地定义；含 localize 阶段扩展点）
+    configs/
+      center/wist-center.toml.tpl   # 中心配置模板（渲染出 configs/center/wist-center.toml）
+      web/nginx.conf.tpl            # 前端站点配置模板（渲染出 configs/web/nginx.conf）
+  values/                   # gops 值文件（sys_value.yml 生成；value.yml 客户覆盖，版本化）
+  configs/                  # 运行期配置/密钥（现场生成，不入 git / 不入包）
+    center/                 # 发布态：wist-center.toml（由模板渲染）+ ca/（CA/证书）+ state/ + artifacts/
+    web/                    # 发布态：nginx.conf（由模板渲染）
+  scripts/                  # 发布态初始化脚本（幂等；由 localize 阶段流程调用）
+    gen-center-ca.sh        # 控制中心 CA + 服务器证书（一次性，手动或由 init-center 调用）
+    init-center.sh          # 中心配置渲染值 + CA 备料（幂等）
+    init-web-conf.sh        # 前端站点配置的渲染值（幂等；域名取 CENTER_DOMAIN）
+    align-host-perms.sh     # 宿主属主/权限对齐（属主=部署账号、属组=容器 gid 999；幂等）
+  dev/                      # 开发态：本地二进制 + vite
+    lib.sh                  # 公共函数（下面几个入口脚本 source 它）
+    start-deps.sh / stop-deps.sh      # 第三方依赖（postgres / victoria-metrics）
     start-center.sh / stop-center.sh  # 中心后端
     start-web.sh    / stop-web.sh     # 管理前端
     start.sh                          # 一键：center + web
-    gen-center-ca.sh                  # 控制中心 CA 信任根 + 服务器证书（一次性生成，手动跑）
+  .github/workflows/release.yml     # 打包发布（见「制品包」）
+  .run.gxl / _gal/                  # gx 工作区（版本 / 标签流程）
+  version.txt
   README.md
 ```
 
-> **数据目录**：开发态的本地 JSON store 与制品镜像落在 `wist-center-stack/.run/center/`
-> （已 gitignore），与运行期临时产物同处；清 `.run` 只丢本地数据，不影响 PostgreSQL 里的数据
-> （探测到 PG 可达时用 `PgStore`，否则才退回文件存储）。
+> **数据目录**：
+> - 开发态的本地 JSON store 与制品镜像落在 `wist-center-stack/.run/`（已 gitignore）。
+> - 发布态落挂载卷 `configs/center/`（`state/` 存 JSON store、`artifacts/` 存制品镜像，
+>   使用 PostgreSQL 时前者不用）；清 `.run` 只丢开发态本地数据。
+
+## 发布态（经 gops 管理）
+
+本栈是一个 gops 系统（`sys/sys_model.yml` 里 `kind: docker-compose`），起停走 `gops run`，它分发到
+对应的 `docker compose` 子命令：
+
+| 命令 | 实际执行 |
+|---|---|
+| `gops run download` | `docker compose pull` |
+| `gops run install` | `docker compose create` |
+| `gops run start` | `docker compose up -d` |
+| `gops run stop` | `docker compose stop` |
+| `gops run uninstall` | `docker compose down` |
+| `gops run status` | `docker compose ps` |
+| `gops run diagnose` | `docker compose config` |
+
+### 前置：主机要求
+
+| 项 | 要求 | 怎么验 |
+|---|---|---|
+| Docker + Compose V2 | `docker compose` 是 **CLI 插件**；只有老的 `docker-compose` v1 不够 | `docker compose version` 能打印 `v2.x` |
+| 执行账号 | 普通账号 + **已加入 `docker` 组**；部署目录由它拥有 | `id -nG`（输出里应含 `docker`） |
+| 端口 | 宿主 `${CENTER_PORT}` / `${WEB_PORT}` / `${PG_PORT}` / `${VM_PORT}` | 见 `sys/setting/vars.yml` |
+
+### 变量与本地化
+
+**一条规则：现场值只写 `values/value.yml`（入库），改完跑 `gops sys localize` 即生效** ——
+不需要 `update`，也不用动 `sys/merged_vars.yml`。覆盖值会在同一次 localize 内一致地进入 `.env`
+与渲染出的配置（`wist-center.toml` / `nginx.conf`）。
+
+```bash
+vim values/value.yml      # 改域名 / 宿主端口等现场值（已跟踪，不忽略）
+gops sys localize         # 一条命令：渲染配置 + 导出 .env（compose 读它）
+```
+
+`sys/setting/vars.yml` 是**产品默认值**（随仓走的基线），现场一般**不用碰**。确实要改产品默认时：
+
+```bash
+gops sys update           # 解析 vars.yml → sys/merged_vars.yml（入库，要一起提交）
+gops sys localize
+```
+
+**`localize` 还会跑项目自己的阶段流程**：本栈把它定义在 `sys/workflows/operators.gxl`
+（**本地定义**，不引外部 ops-gxl），由 `_gal/work.gxl` 的 `mod main : operators` 纳入；合并后的值以
+**环境变量**注入该流程（用 `$(printenv XXX)` 读）。流程里做四件**幂等**的事：
+
+1. 确保 `configs/center`、`configs/web` 存在；
+2. 备料控制中心：CA（信任根 + 服务器证书）+ 渲染值 `configs/center/wist-center.value.json`
+   （`scripts/init-center.sh`，缺什么补什么）；
+3. 渲染 `configs/center/wist-center.toml`（模板在 `sys/configs/center/wist-center.toml.tpl`），
+   并写前端站点配置的渲染值 + 渲染 `configs/web/nginx.conf`（`scripts/init-web-conf.sh` + 模板）；
+4. **宿主属主/权限对齐**（`scripts/align-host-perms.sh`；非 Linux 自动跳过）——
+   必须在 `docker compose up` **之前**：Docker 会把缺失的挂载源目录自行建成 `root:root`，
+   属主一旦是 root，之后的部署账号就写不动了。
+
+`gops sys localize --no-flow` 可跳过该流程。
+
+### 密钥（不落盘）
+
+两个运行期密钥走 gops `.galaxy` 密钥，**不写进 `.env` / 不入库**：
+
+```yaml
+# ~/.galaxy/sec_value.yml
+center_admin_token: <管理面 token>
+center_hmac_secret: <RegistToken 派生密钥>
+```
+
+`gops run start` 会把它们以 `SEC_CENTER_ADMIN_TOKEN` / `SEC_CENTER_HMAC_SECRET` 注入
+`docker compose` 子进程；compose 再把它们映射进 `center` 容器的环境变量，
+模板里的 `admin_token` / `hmac_secret` 引用这两个环境变量在运行期解析。
+
+### 前置：挂载文件
+
+compose 还挂这些路径：
+
+1. `configs/center/` —— 中心配置与密钥。**仓库不含**，由 `scripts/init-center.sh` 现场备料 + 模板
+   渲染；`configs/center/ca/control-center.pem` 是分发给网关的信任根。
+2. `sys/configs/web/nginx.conf.tpl` —— 前端站点配置**模板**。**仓库自带**，由 `gops sys localize`
+   渲染到 `configs/web/nginx.conf`（静态托管 + SPA 深链回退 + 把 `/api` 反代到 `center:3100`）。
+3. `sys/db/initdb/01_schema.sql` —— PostgreSQL 建表脚本（**仓库自带**），挂在
+   `/docker-entrypoint-initdb.d`，**仅首次**初始化数据卷时执行。它与
+   `wist-center/docker/initdb/01_schema.sql` 同源，改中心 schema 时两处要同步。
+
+### 权限与运行身份（Linux 必读）
+
+`center` 镜像**固定以 `999:999` 运行**（镜像里 `useradd -r wist`；compose 里 `user:` 已显式钉死）。
+bind 挂载在 Linux 上**不改变属主**，所以宿主侧必须显式对齐，否则容器写不出 `state/`、读不到 CA 私钥。
+`scripts/align-host-perms.sh`（localize 流程会自动跑）把 `configs/center` 对齐成
+属主=部署账号、属组=999、目录 2770(setgid)、私钥 640。
+
+### 起来之后
+
+- 管理页面：`http://<host>:${WEB_PORT}`（前面反代终止 TLS 后即 `https://<CENTER_DOMAIN>`）
+- 中心 API：`http://<host>:${CENTER_PORT}`
+- 管理 token：见上「密钥」里的 `center_admin_token`
+- 起停与排查：
+
+```bash
+gops run start            # 或 docker compose -f sys/docker-compose.yml --project-directory . up -d
+gops run status
+gops run stop
+```
 
 ## 开发态（本地二进制）
 
 ```bash
-# 1. 第三方依赖（用 Docker 起；不起也能跑，只是退回文件存储且不推时序）
-./sysrun/start-deps.sh   # PostgreSQL 55432 + VictoriaMetrics 28429
-#                         # 也可只起其中一个：./sysrun/start-deps.sh postgres
+# 1. 第三方依赖（用发布态同一份 compose 起；不起也能跑，只是退回文件存储且不推时序）
+./dev/start-deps.sh      # PostgreSQL 55432 + VictoriaMetrics 28429
+#                         # 也可只起其中一个：./dev/start-deps.sh postgres
 
 # 2. 后端与前端各自独立，可单独起/停/重启
-./sysrun/start-center.sh
-./sysrun/start-web.sh
+./dev/start-center.sh
+./dev/start-web.sh
 
 # 或者一条命令起两个：
-./sysrun/start.sh
+./dev/start.sh
 
 # 停止：前台跑的直接 Ctrl+C；后台起的、或终端已经关了就用
-./sysrun/stop-center.sh
-./sysrun/stop-web.sh
+./dev/stop-center.sh
+./dev/stop-web.sh
 ```
-
-`start-*.sh` 会把自己拉起的 pid 写进 `.run/center.pid` / `.run/web.pid`，`stop-*.sh` 据此停服
-（会校验 pid 确实指向目标进程，防 pid 复用误杀）；pidfile 失效时退化为按监听端口找进程
-（这一层同时兜住 `npm run dev` 派生的 node/vite 子孙进程）。外部停掉后，前台那个 `start-*.sh`
-会因为 `wait` 返回而自己退出并收尾。
-
-三个入口脚本各自对应一个进程，互不依赖：`start-web.sh` 在中心没跑时也能起
-（前端会回退到内置 example 数据）；`start-center.sh` 在依赖没跑时也能起（退回文件存储、不推时序）。
 
 起完后：
 
 - 管理页面 `http://127.0.0.1:5173`（vite dev，`/api` 反代到中心）
 - 中心 API `http://127.0.0.1:3100`
-- **管理 token**：首次启动生成在中心配置文件里（`~/.wist-center/wist-center.toml`），
-  之后每次启动复用同一份并打印 —— 不再每次变。填入管理页面即可开启 5s 轮询刷新
+- **管理 token**：首次启动生成在中心配置文件里（`~/.wist-center/wist-center.toml`），之后每次启动
+  复用同一份并打印 —— 不再每次变。填入管理页面即可开启 5s 轮询刷新
 - 日志：`/tmp/wist-center.log`、`/tmp/wist-center-web.log`
 
-中心配置：`start-center.sh` 会在配置文件不存在时调 `wist-center init-config` 生成一份
-（随机 admin token / hmac secret），已存在则直接复用；运行态（监听地址、存储与制品目录、
-PG / VM 地址）仍由脚本用 env 覆盖。所以：改 token 就改配置文件，删配置文件 = 重新生成凭据
-（已发出去的 token 随之失效）。详见 wist-center 仓库 README 的 Configuration。
-
-env 覆盖项（每个脚本头部也各自列了一份）：
-
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `WEB_URL` | `http://127.0.0.1:5173` | 前端地址，端口跟随它 |
-| `WIST_CENTER_CONFIG` | `~/.wist-center/wist-center.toml` | 中心配置文件路径（不存在则用 `init-config` 生成） |
-| `WARP_INSIGHT_CENTER_LISTEN` | `127.0.0.1:3100` | 中心监听地址（也决定前端的 `/api` 反代目标） |
-| `WARP_INSIGHT_CENTER_ADMIN_TOKEN` | 取配置文件里的值 | 管理面 token；显式设置则覆盖配置文件 |
-| `WARP_INSIGHT_CENTER_HMAC_SECRET` | 取配置文件里的值 | RegistToken 派生密钥；显式设置则覆盖配置文件 |
-| `WARP_INSIGHT_CENTER_DATABASE_URL` | 探测 `PG_PORT` | PostgreSQL DSN；未设置→探测，显式置空→文件存储 |
-| `WARP_INSIGHT_CENTER_VICTORIAMETRICS_URL` | 探测 `VM_PORT` | 时序库地址；未设置→探测，显式置空→不推送 |
-| `PG_PORT` / `VM_PORT` | `55432` / `28429` | 依赖服务的宿主端口；同时决定探测端口与容器端口映射 |
+开发态仍用 `wist-center init-config` 生成 `~/.wist-center/wist-center.toml`（随机 admin token /
+hmac secret）；发布态不用它，改走上面的 gops 密钥。
 
 前端如果没有装依赖，先执行一次：
 
@@ -118,8 +212,11 @@ env 覆盖项（每个脚本头部也各自列了一份）：
 (cd ../wist-center-web && npm install)
 ```
 
-## 发布态（待补）
+## 制品包（发布）
 
-见开头「发布态为什么还没做」。补齐后形态与 `wist-gateway-stack` 同构：`docker compose up -d`
-拉起 `center` + `web` + `postgres` + `victoria-metrics`，前端入口走 nginx（静态 + `/api` 反代到
-`center`），容器配置通过挂载注入。届时前端端口需与网关栈的 `8443` 避让。
+打 tag（`v*.*.*`）时 `.github/workflows/release.yml` 用 `git archive` 把**整仓（除 `.github`）**
+打成 `wist-center-stack-<tag>.tar.gz` 挂到 Release，供 `gops prj import` / 中心作为版本制品引用。
+`sys/merged_vars.yml` 随仓入库、进包，所以 CI 里不必现算 —— 但改了 `sys/setting/vars.yml` 后，
+本地要跑一次 `gops sys update` 并把 `merged_vars.yml` 的变更一起提交。
+
+版本以仓库根 `version.txt` 为权威，用 `gx adm v_patch` / `v_feat` 升级、`gx adm tag_alpha` 打标签。

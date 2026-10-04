@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  # 打包：整仓内容（除 CI 自身的 .github）打成部署包。
+  # 用 git archive 出包，只收 git 跟踪的内容 —— configs/（现场生成，已 ignore）、values/、_gal/.report
+  # 等未入 git，天然不入包；sys/configs/*.tpl 与 sys/db/initdb/ 随仓入库，会进包。
+  # 变量解析产物 sys/merged_vars.yml 是 gops 文档标注“需入库”的文件，已在仓库里、
+  # 随 git archive 进包，所以这里不需要跑 gops。
+  # 纪律：改了 sys/setting/vars.yml 后，本地跑一次 `gops sys update` 并把 merged_vars.yml
+  # 的变更一起提交，否则包里带的是旧值。
+  package:
+    name: Package deployment bundle
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build tarball
+        run: |
+          set -eu
+          bundle="wist-center-stack-${GITHUB_REF_NAME}"
+          # 注意：**不要**加 --prefix —— gops 解包时会自建同名目录（~/ds-package/<包名>/），
+          # 包内再套一层会导致 prj import 找不到 sys/sys_model.yml。
+          # 变量文件 sys/merged_vars.yml 由仓库带上，不必在 CI 里现算。
+          git archive \
+            --format=tar \
+            HEAD -- . ':(exclude).github' > "${bundle}.tar"
+          gzip -9 "${bundle}.tar"
+          echo "包内关键文件："
+          tar -tzf "${bundle}.tar.gz" | grep -E "sys/.*vars\.yml|sys/sys_model\.yml|sys/docker-compose\.yml"
+          ls -lh "${bundle}.tar.gz"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wist-center-stack
+          path: wist-center-stack-*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  # 发布到 GitHub Release，供中心作为版本制品下载 / `gops prj import` 引用。
+  release:
+    needs: [package]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: wist-center-stack
+          path: artifacts
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: artifacts/*.tar.gz

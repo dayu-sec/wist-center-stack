@@ -1,5 +1,29 @@
-# 开发态运行期产物（本地 JSON store / 制品镜像 / 中心自签材料）
+# 运行时状态 / 本地数据（开发态的本地 JSON store / 制品镜像 / pid）
 .run/
+
+# 中心**运行期**配置与密钥（现场生成；含 admin token / hmac secret / CA 私钥 / 服务器私钥 /
+# JSON store / 制品镜像）。声明模板在 sys/configs/ 随库入库。
+/configs/
+# 同类目录的任何副本（`configs_x/` 等：同样是运行物，含私钥，绝不入库）
+/configs*/
+
+# ===== gops 生成物 =====
+# 变量解析结果（gops sys update / package 生成）
+sys/resolved_vars.yml
+# 交付锁（`gops sys package` 生成，带时间戳；不入库，由 package 自己塞进交付包）
+/deliver.lock
+# 值文件：忽略派生的值文件，保留客户覆盖 values/value.yml（版本化）
+values/*
+!values/value.yml
+# .env 由 gops sys localize 生成（非密钥配置；密钥走 ${SEC_xxx} 不落盘）
+.env
+
+# 中心身份备份产物（含私钥，别入库）
+wist-center-backup-*.tar.gz
 
 # macOS
 .DS_Store
+.report
+.run*
+# 迁移（gops >= 1.4）：模块按目标模型分组（本栈纯 compose，保留以对齐 gateway-stack）
+sys/*/mods

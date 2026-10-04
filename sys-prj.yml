@@ -1,0 +1,32 @@
+test_envs:
+  dep_root: ''
+  deps: []
+
+# `gops sys package` 打包时排除的路径（glob，相对系统根；默认模式与 `--full` **都生效**）。
+#
+# 为什么必须有这条：`configs/` 里是**现场生成的身份与运行材料** —— 控制中心 CA 私钥、
+# 服务器私钥、渲染出的 `wist-center.toml`（含 admin token / hmac secret）、JSON store 与
+# 制品镜像。不加这条，一次 `gops sys package --full` 就会把整套密钥塞进交付包。
+# 默认模式本来就只收 git 入库文件，这里是护栏。
+ignore:
+  - configs
+
+# 现场态：升级/重建时**不覆盖、也不删**的路径（glob，相对系统根）。
+#
+# 不变式 `ignore ⊆ preserve`：不进交付包的按定义就不是包内容，升级当然也不该碰它。
+preserve:
+  - .env
+  - configs
+
+# 备份选取分级（只表达“丢了什么代价”，**不触发任何删除**）。
+#   restore 档：丢了要重装 / 换身份 → `gops prj backup` 默认收，`gops prj restore` 放回。
+# 中心真正**不可再生**的是身份材料：控制中心 CA（公章，已分发的信任根靠它，轮换要一个个网关重发）
+# 与渲染进 config 的 admin token / hmac secret。
+#   注意：PostgreSQL 数据卷（pg 里的 store）与 VictoriaMetrics 时序**不在文件备份范围内** ——
+#   库丢了，网关凭现存的客户端证书会重连重建；时序本就是历史。要备库得单独 `pg_dump`。
+backup:
+  restore:
+    - configs/center/ca
+    - configs/center/wist-center.toml
+    - configs/center/state/*.json
+  rebuild: []

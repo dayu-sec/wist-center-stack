@@ -1,0 +1,85 @@
+# 系统级变量定义（system 段，仅非密钥配置）—— **产品默认值**
+#
+# ⚠ 现场值不要写在这里：写 `values/value.yml`（它覆盖本文件，`gops sys localize` 即生效）。
+#    改**本文件**才需要 `gops sys update`（并把 `sys/merged_vars.yml` 一起提交），否则不生效。
+#
+# 链路：本文件 → `gops sys update` → `sys/merged_vars.yml`（入库）
+#       → `gops sys localize`（+ 合并 values/ 覆盖）→ 栈根 `.env` + `sys/configs/*.tpl` 渲染结果，
+#       供 `sys/docker-compose.yml` 与 `scripts/*` 消费。
+#
+# 说明：
+#   - 只有 `system:` 段的变量会进入 resolved_vars.yml 并最终导出到 .env；
+#   - 密钥不要写在这里：compose 里用 ${SEC_xxx} 占位，运行时由 `gops run start`
+#     从 ~/.galaxy/sec_value.yml 注入，不落盘（本栈的密钥见下面 CENTER 段注释）；
+#   - 容器内端口/路径/服务名是应用契约，直接写在 sys/docker-compose.yml 里。
+system:
+  # 镜像源前缀：国内走腾讯云 TCR，境外改成 ghcr.io/dayu-sec
+  - name: IMAGE_SPC
+    value: ghcr.io/dayu-sec
+
+  # 镜像 tag：中心后端与前端各自独立发版，tag 分开；需要钉版本时改这里。
+  #   CENTER_TAG 对应 wist-center 的 release tag（v0.1.1-alpha）
+  #   WEB_TAG    对应 wist-center-web 的 release tag（v0.1.2-alpha）
+  - name: CENTER_TAG
+    value: v0.1.1-alpha
+  - name: WEB_TAG
+    value: v0.1.2-alpha
+  # 观测镜像：直接用上游官方 victoriametrics/victoria-metrics（compose 里 image 就是它）
+  - name: VM_TAG
+    value: v1.153.0
+
+  # 中心生成「网关安装命令」时用的网关镜像（写进渲染出的 wist-center.toml 的 [artifacts] gateway_image）。
+  # 现场按实际网关栈镜像覆盖；默认值与 wist-gateway-stack 当前钉的版本对齐。
+  - name: GATEWAY_IMAGE
+    value: ghcr.io/dayu-sec/wist-gateway:v0.1.15-alpha
+  # 中心存储：PostgreSQL（PgStore）。库结构由 sys/db/initdb/01_schema.sql 在**首次**初始化数据卷时建立。
+  - name: PG_TAG
+    value: '16'
+
+  # 宿主端口（容器内端口是应用契约，写在 compose 里）。
+  # 刻意与 wis-gateway-stack 的 443 / 8443 / 18429 避让 —— 两个栈同机同时运行是常态。
+  - name: CENTER_PORT
+    value: 3100
+  - name: WEB_PORT
+    value: 18080
+  - name: PG_PORT
+    value: 55432
+  - name: VM_PORT
+    value: 28429
+
+  # 指标保留期（月）与时区
+  - name: RETENTION_PERIOD
+    value: 6
+  - name: TZ
+    value: Asia/Shanghai
+
+  # 对外域名（控制中心 public_url 的 host，也是控制中心服务器证书的 SAN）。
+  # —— 只是**默认值**；现场值走 values/value.yml（改那里 localize 即生效）。
+  - name: CENTER_DOMAIN
+    value: center.example.com
+
+  # 中心存储 PostgreSQL（容器网络内服务名 postgres）。这三个值同时用于：compose 里 postgres
+  # 容器的 POSTGRES_* 环境，以及 scripts/init-center.sh 生成的 DSN（database_url）。
+  # 生产环境请改这里并走密钥（当前默认 demo/demo 仅用于开发/测试态，与 wist-center 自带
+  # docker-compose.yml 一致）。
+  - name: PG_USER
+    value: demo
+  - name: PG_PASSWORD
+    value: demo
+  - name: PG_DB
+    value: insight_demo
+
+  # 中心查询/推送时序库的地址（容器内服务名 victoria-metrics）。
+  - name: VICTORIA_METRICS_URL
+    value: http://victoria-metrics:8428
+
+  # 挂载源路径（按部署环境摆放）
+  # 中心配置与密钥目录（渲染出 wist-center.toml + CA），容器挂到 /wist-center
+  - name: CENTER_CONFIG_DIR
+    value: ./configs/center
+  # 前端站点配置：由 sys/configs/web/nginx.conf.tpl 在 localize 时渲染到此（运行物，不入库）
+  - name: WEB_NGINX_CONF
+    value: ./configs/web/nginx.conf
+  # PostgreSQL 建表脚本目录（随库入库；首次初始化数据卷时执行）
+  - name: PG_INITDB_DIR
+    value: ./sys/db/initdb
