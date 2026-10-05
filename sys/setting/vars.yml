@@ -18,12 +18,12 @@ system:
     value: ghcr.io/dayu-sec
 
   # 镜像 tag：中心后端与前端各自独立发版，tag 分开；需要钉版本时改这里。
-  #   CENTER_TAG 对应 wist-center 的 release tag（v0.1.1-alpha）
-  #   WEB_TAG    对应 wist-center-web 的 release tag（v0.1.2-alpha）
+  #   CENTER_TAG 对应 wist-center 的 release tag（v0.5.0-alpha）
+  #   WEB_TAG    对应 wist-center-web 的 release tag（v0.1.5-alpha）
   - name: CENTER_TAG
-    value: v0.1.1-alpha
+    value: v0.5.0-alpha
   - name: WEB_TAG
-    value: v0.1.2-alpha
+    value: v0.1.5-alpha
   # 观测镜像：直接用上游官方 victoriametrics/victoria-metrics（compose 里 image 就是它）
   - name: VM_TAG
     value: v1.153.0
@@ -31,7 +31,7 @@ system:
   # 中心生成「网关安装命令」时用的网关镜像（写进渲染出的 wist-center.toml 的 [artifacts] gateway_image）。
   # 现场按实际网关栈镜像覆盖；默认值与 wist-gateway-stack 当前钉的版本对齐。
   - name: GATEWAY_IMAGE
-    value: ghcr.io/dayu-sec/wist-gateway:v0.1.15-alpha
+    value: ghcr.io/dayu-sec/wist-gateway:v0.1.19-alpha
   # 中心存储：PostgreSQL（PgStore）。库结构由 sys/db/initdb/01_schema.sql 在**首次**初始化数据卷时建立。
   - name: PG_TAG
     value: '16'

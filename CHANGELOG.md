@@ -3,10 +3,11 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
-## [Unreleased]
+## [0.1.1-alpha] - 2026-10-05
 
 ### Changed
 
+- **镜像 tag 跟进**：中心 `v0.5.0-alpha`、前端 `v0.1.5-alpha`；网关安装镜像 `v0.1.19-alpha`。
 - 同步 `sys/db/initdb/01_schema.sql`：`gateways` 表补网关状态**富化列**（机队 / 存储 / 数据面 /
   主机资源），与 `wist-center` 0.5.0-alpha 同源。
 
