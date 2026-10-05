@@ -57,12 +57,9 @@ wist-center-stack/
     init-center.sh          # 中心配置渲染值 + CA 备料（幂等）
     init-web-conf.sh        # 前端站点配置的渲染值（幂等；域名取 CENTER_DOMAIN）
     align-host-perms.sh     # 宿主属主/权限对齐（属主=部署账号、属组=容器 gid 999；幂等）
-  dev/                      # 开发态：本地二进制 + vite
-    lib.sh                  # 公共函数（下面几个入口脚本 source 它）
-    start-deps.sh / stop-deps.sh      # 第三方依赖（postgres / victoria-metrics）
-    start-center.sh / stop-center.sh  # 中心后端
-    start-web.sh    / stop-web.sh     # 管理前端
-    start.sh                          # 一键：center + web
+  dev/                      # 开发态：本地二进制 + vite（单一入口 svc.sh）
+    svc.sh                  # 统一入口：start / stop / status / token（组件 deps|center|web）
+    lib.sh                  # 公共函数（svc.sh source 它）
   .github/workflows/release.yml     # 打包发布（见「制品包」）
   .run.gxl / _gal/                  # gx 工作区（版本 / 标签流程）
   version.txt
@@ -179,32 +176,38 @@ gops run stop
 ## 开发态（本地二进制）
 
 ```bash
-# 1. 第三方依赖（用发布态同一份 compose 起；不起也能跑，只是退回文件存储且不推时序）
-./dev/start-deps.sh      # PostgreSQL 55432 + VictoriaMetrics 28429
-#                         # 也可只起其中一个：./dev/start-deps.sh postgres
+# 起全套（deps + center + web）：
+./dev/svc.sh start
 
-# 2. 后端与前端各自独立，可单独起/停/重启
-./dev/start-center.sh
-./dev/start-web.sh
+# 只起/另起某组件（deps | center | web），可组合：
+./dev/svc.sh start center         # 只起后端
+./dev/svc.sh start web            # 只起前端
+./dev/svc.sh start deps           # 第三方依赖：PostgreSQL 55432 + VictoriaMetrics 28429
+./dev/svc.sh start all            # = start（全部组件）
 
-# 或者一条命令起两个：
-./dev/start.sh
+# 看状态 / 停止 / 取管理 token：
+./dev/svc.sh status
+./dev/svc.sh stop                 # 停全部（也可 ./dev/svc.sh stop web）
+./dev/svc.sh token
 
-# 停止：前台跑的直接 Ctrl+C；后台起的、或终端已经关了就用
-./dev/stop-center.sh
-./dev/stop-web.sh
+# 跳过 cargo build：
+./dev/svc.sh start center --no-build
 ```
 
 起完后：
 
-- 管理页面 `http://127.0.0.1:5173`（vite dev，`/api` 反代到中心）
-- 中心 API `http://127.0.0.1:3100`
+- 管理页面 `http://127.0.0.1:5173`（vite dev，`/api` 反代到中心 `https://127.0.0.1:3100`）
+- 中心 API `https://127.0.0.1:3100`（dev **默认 TLS**：自签 CA-S + 服务器证书；`WIST_CENTER_TLS=0` 可关成明文 HTTP）
 - **管理 token**：首次启动生成在中心配置文件里（`~/.wist-center/wist-center.toml`），之后每次启动
   复用同一份并打印 —— 不再每次变。填入管理页面即可开启 5s 轮询刷新
 - 日志：`/tmp/wist-center.log`、`/tmp/wist-center-web.log`
 
 开发态仍用 `wist-center init-config` 生成 `~/.wist-center/wist-center.toml`（随机 admin token /
 hmac secret）；发布态不用它，改走上面的 gops 密钥。
+
+> **接入本机网关（dev 快速路）**：把本机网关栈接到这个中心，用 `wist-gateway-stack` 仓的
+> `./dev/link_local_center.sh` —— gwlinkd 是网关**宿主侧**常驻、随网关走，所以它归那仓而非本仓。
+> 产品路径是网关页面「链接上级」；CLI 只是 dev 捷径。
 
 前端如果没有装依赖，先执行一次：
 

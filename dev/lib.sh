@@ -2,10 +2,10 @@
 # wist-center-stack 开发态公共函数 / 路径 / 默认端口。
 #
 # 由 dev/*.sh **source** 使用，不单独执行。
-# 依赖 python3（TCP 探测 / 解析 URL / 生成随机凭据）与 lsof（停服时按端口兜底）。
+# 依赖 python3（TCP 探测 / 解析 URL / 读 token）与 lsof（停服时按端口兜底）。
 #
-# 约定：入口脚本各自 `set -euo pipefail` 后再 source 本文件，并注册
-# `trap cleanup_started_processes EXIT`。
+# 约定：入口脚本 svc.sh 先 `set -euo pipefail` 再 source 本文件；各组件在**子 shell** 里起
+# （见 svc.sh），所以别在组件函数里设“给外面看”的全局量 —— 出了子 shell 就没了。
 
 # ── 路径 ──
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,24 +30,15 @@ WEB_PID_FILE="${STACK_ROOT}/.run/web.pid"
 # 可用 WIST_CENTER_CONFIG 指向别处。
 CENTER_CONFIG="${WIST_CENTER_CONFIG:-${HOME}/.wist-center/wist-center.toml}"
 
-# 中心服务端 TLS（可选，默认关）：WIST_CENTER_TLS=1 时用自签服务器证书起 HTTPS，
-# 并让网关用同一张证书当信任锚（dev 自签：锚 = 叶证书本身）。
+# 中心服务端 TLS（**默认开**）：用自签 CA-S + 服务器证书起 HTTPS，并让网关用同一 CA-S 当信任锚
+# （dev 自签：锚 = CA-S，服务器叶证书由它签）。关掉（起明文 HTTP）：`WIST_CENTER_TLS=0`。
 # 证书落 ~/.wist-center/tls/（与长期凭据同处，不入 .run）。
-CENTER_TLS="${WIST_CENTER_TLS:-0}"
+CENTER_TLS="${WIST_CENTER_TLS:-1}"
 CENTER_TLS_DIR="${WIST_CENTER_TLS_DIR:-${HOME}/.wist-center/tls}"
 CENTER_TLS_CA_CERT="${CENTER_TLS_DIR}/ca.crt.pem"
 CENTER_TLS_CA_KEY="${CENTER_TLS_DIR}/ca.key.pem"
 CENTER_TLS_CERT="${CENTER_TLS_DIR}/server.crt.pem"
 CENTER_TLS_KEY="${CENTER_TLS_DIR}/server.key.pem"
-
-# ── gwlinkd（宿主侧常驻，把本机网关栈接到 center）──
-# 它是对中心做 mTLS 的客户端：首跑 link-upstream/register，之后周期 status/renew。
-GWLINKD_CRATE="${ROOT_DIR}/wist-gwlinkd"
-GWLINKD_DIR="${STACK_ROOT}/.run/gwlinkd"
-GWLINKD_CONFIG="${GWLINKD_DIR}/gwlinkd.toml"
-GWLINKD_LOG="${GWLINKD_DIR}/gwlinkd.log"
-GWLINKD_PID_FILE="${STACK_ROOT}/.run/gwlinkd.pid"
-GWLINKD_LINK=""
 
 # ── 端口 / 地址（覆盖用同名 env；PG_PORT、VM_PORT 与 docker-compose.yml 同名同值）──
 CENTER_ADDR="${WARP_INSIGHT_CENTER_LISTEN:-127.0.0.1:3100}"
@@ -56,17 +47,10 @@ WEB_URL="${WEB_URL:-http://127.0.0.1:5173}"
 PG_PORT="${PG_PORT:-55432}"
 VM_PORT="${VM_PORT:-28429}"
 
-# 由 start_center / start_web 填充。
-# ADMIN_TOKEN：从中心配置读出的管理 token，仅用于启动后提示。
-ADMIN_TOKEN=""
-CENTER_PID=""
-WEB_PID=""
-# 中心对外协议（http / https）；start_center 按 WIST_CENTER_TLS 设定，start_web 据此设代理目标。
+# 中心对外协议（http / https）；start_center / start_web 各自按 TLS 开关设定。
 CENTER_SCHEME="http"
-# 前端地址解析出的端口（start_web 与 stop-web.sh 共用）。
+# 前端地址解析出的端口（start_web 与 svc.sh stop 共用）。
 WEB_PORT=""
-# 前端可用（本脚本拉起或复用了已在运行的实例）。
-WEB_ACTIVE=""
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -148,24 +132,6 @@ kill_port_holder() {
   sleep 0.5
 }
 
-# 停止本脚本拉起的进程（入口脚本注册为 EXIT trap）。
-cleanup_started_processes() {
-  local pid
-  for pid in "${WEB_PID}" "${CENTER_PID}"; do
-    if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
-      kill "${pid}" 2>/dev/null || true
-      wait "${pid}" 2>/dev/null || true
-    fi
-  done
-  # 只清理"本脚本确实拉起过"的服务端口，避免误伤别人的实例。
-  [[ -n "${WEB_PID}" ]] && kill_port_holder "${WEB_PORT:-$(web_port)}" "wist-center-web"
-  [[ -n "${CENTER_PID}" ]] && kill_port_holder "${CENTER_PORT}" "wist-center"
-  remove_pidfile "${CENTER_PID_FILE}"
-  remove_pidfile "${WEB_PID_FILE}"
-  echo
-  echo "已停止本脚本拉起的进程。"
-}
-
 # 停服：优先 pidfile（并校验 pid 确实是目标进程，防 pid 复用），退化到端口占用者。
 # stop_service <显示名> <pidfile> <端口> <进程命令行特征>
 stop_service() {
@@ -226,7 +192,7 @@ resolve_dependencies() {
     echo "PostgreSQL 可达（127.0.0.1:${PG_PORT}）→ PgStore"
   else
     DATABASE_URL=""
-    echo "PostgreSQL 不可达（127.0.0.1:${PG_PORT}）→ 本地 JSON 文件存储（如需 PG：./dev/start-deps.sh postgres）"
+    echo "PostgreSQL 不可达（127.0.0.1:${PG_PORT}）→ 本地 JSON 文件存储（如需 PG：./dev/svc.sh start deps）"
   fi
 
   if [[ -n "${WARP_INSIGHT_CENTER_VICTORIAMETRICS_URL+set}" ]]; then
@@ -241,7 +207,7 @@ resolve_dependencies() {
     echo "VictoriaMetrics 可达（127.0.0.1:${VM_PORT}）→ 上报同时推送时序"
   else
     VM_URL=""
-    echo "VictoriaMetrics 不可达（127.0.0.1:${VM_PORT}）→ 不推送时序（如需：./dev/start-deps.sh victoria-metrics）"
+    echo "VictoriaMetrics 不可达（127.0.0.1:${VM_PORT}）→ 不推送时序（如需：./dev/svc.sh start deps）"
   fi
 }
 
@@ -319,81 +285,10 @@ ensure_center_tls() {
   echo "  服务器证书：${CENTER_TLS_CERT}"
 }
 
-# 构建 wist-gwlinkd（增量）。
-build_gwlinkd() {
-  echo "== 构建 wist-gwlinkd（增量）=="
-  cargo build --manifest-path "${GWLINKD_CRATE}/Cargo.toml"
-}
-
-# 通过 admin API 建一个网关实例，拿到 gateway_id + 一次性接入券；
-# 写 gwlinkd.toml（endpoint=https、trust_bundle=CA-S、state_dir、gateway_id）。
-# 前提：center 以 WIST_CENTER_TLS=1 起（提供 https + CA-S）。
-ensure_gwlinkd_config() {
-  center_tls_enabled || {
-    echo "需要 WIST_CENTER_TLS=1（gwlinkd 走 mTLS，trust_bundle 用 CA-S）" >&2
-    return 1
-  }
-  ensure_center_tls
-  local token
-  token="$(center_admin_token)"
-  if [[ -z "${token}" ]]; then
-    echo "读不到 admin token（${CENTER_CONFIG}）" >&2
-    return 1
-  fi
-  mkdir -p "${GWLINKD_DIR}/state"
-  echo "== 通过 admin API 创建网关实例 =="
-  local resp gw
-  resp="$(curl -sk -X POST "https://${CENTER_ADDR}/api/v1/admin/gateways/instances" \
-    -H "authorization: Bearer ${token}" -H "content-type: application/json" \
-    -d '{"gateway_name":"gw-local","requested_by":"dev"}')"
-  gw="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['instance']['gateway_id'])" "${resp}" 2>/dev/null || true)"
-  if [[ -z "${gw}" ]]; then
-    echo "创建网关实例失败：${resp}" >&2
-    return 1
-  fi
-  # 接入券**不在 create 响应里**（设计 §8）：单独「生成/轮换」拿一次性明文（短 TTL）。
-  local issued boot
-  issued="$(curl -sk -X POST "https://${CENTER_ADDR}/api/v1/admin/gateways/${gw}/link-token" \
-    -H "authorization: Bearer ${token}" -H "content-type: application/json" \
-    -d '{"requested_by":"dev"}')"
-  boot="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['install']['link_token'])" "${issued}" 2>/dev/null || true)"
-  if [[ -z "${boot}" ]]; then
-    echo "生成接入券失败：${issued}" >&2
-    return 1
-  fi
-  cat >"${GWLINKD_CONFIG}" <<EOF
-control_center_endpoint = "https://${CENTER_ADDR}"
-trust_bundle = "${CENTER_TLS_CA_CERT}"
-state_dir = "${GWLINKD_DIR}/state"
-gateway_id = "${gw}"
-EOF
-  GWLINKD_LINK="${boot}"
-  echo "  网关实例：${gw}"
-  echo "  gwlinkd 配置：${GWLINKD_CONFIG}"
-}
-
-# 启动 gwlinkd（后台）。首次带 link token；之后有凭据则免。
-start_gwlinkd() {
-  local bin="${GWLINKD_CRATE}/target/debug/wist-gwlinkd"
-  [[ -x "${bin}" ]] || {
-    echo "缺 gwlinkd 二进制：${bin}（先 build_gwlinkd）" >&2
-    return 1
-  }
-  echo "== 启动 wist-gwlinkd（连 https://${CENTER_ADDR}）=="
-  WIST_GWLINKD_CONFIG="${GWLINKD_CONFIG}" \
-    WIST_GWLINKD_LINK_TOKEN="${GWLINKD_LINK}" \
-    "${bin}" run >"${GWLINKD_LOG}" 2>&1 &
-  GWLINKD_PID=$!
-  write_pidfile "${GWLINKD_PID_FILE}" "${GWLINKD_PID}"
-  echo "  pid=${GWLINKD_PID}；日志：${GWLINKD_LOG}"
-}
-
 # 启动中心后端（后台）；需先 resolve_dependencies + build_center + ensure_center_config。
 start_center() {
   local center_bin="${CENTER_CRATE}/target/debug/wist-center"
   mkdir -p "${RUN_DIR}/artifacts"
-  # 凭据来自配置文件（首次由 ensure_center_config 生成并持久化），这里只读出来提示。
-  ADMIN_TOKEN="$(center_admin_token)"
 
   # TLS 关闭时这四项传空：中心把空值当未配置（明文 HTTP，public_url/ca_cert 保留配置文件值）。
   local tls_cert="" tls_key="" public_url="" ca_cert=""
@@ -421,9 +316,9 @@ start_center() {
     WARP_INSIGHT_CENTER_SERVER_KEY_PATH="${tls_key}" \
     WARP_INSIGHT_CENTER_PUBLIC_URL="${public_url}" \
     WARP_INSIGHT_CENTER_CA_CERT_PATH="${ca_cert}" \
-    "${center_bin}" >"${CENTER_LOG}" 2>&1 &
-  CENTER_PID=$!
-  write_pidfile "${CENTER_PID_FILE}" "${CENTER_PID}"
+    nohup "${center_bin}" >"${CENTER_LOG}" 2>&1 &
+  local center_pid=$!
+  write_pidfile "${CENTER_PID_FILE}" "${center_pid}"
   if wait_until "wist-center" center_ready; then
     return 0
   fi
@@ -434,6 +329,8 @@ start_center() {
 # 启动管理前端（后台）。vite 的 /api 反代到中心，目标取 CENTER_ADDR。
 start_web() {
   require_cmd npm
+  # 代理目标协议随 TLS 开关 —— 单独跑 start-web.sh 时 start_center 未设过，这里补上。
+  if center_tls_enabled; then CENTER_SCHEME="https"; else CENTER_SCHEME="http"; fi
   if [[ ! -d "${WEB_DIR}/node_modules" ]]; then
     echo "wist-center-web 依赖缺失：${WEB_DIR}/node_modules（先 cd 到该目录执行 npm install）" >&2
     exit 1
@@ -441,7 +338,6 @@ start_web() {
   WEB_PORT="$(web_port)"
   if [[ "$(web_status)" == "200" ]]; then
     echo "wist-center-web 已在运行（${WEB_URL}），复用。"
-    WEB_ACTIVE=1
     return 0
   fi
   local host
@@ -453,35 +349,49 @@ start_web() {
     export WARP_INSIGHT_WEB_PROXY_TARGET="${CENTER_SCHEME}://${CENTER_ADDR}"
     exec nohup npm run dev -- --host "${host}" --port "${WEB_PORT}" --strictPort >"${WEB_LOG}" 2>&1
   ) &
-  WEB_PID=$!
-  write_pidfile "${WEB_PID_FILE}" "${WEB_PID}"
-  echo "  启动 wist-center-web：${WEB_URL} (pid=${WEB_PID})"
+  local web_pid=$!
+  write_pidfile "${WEB_PID_FILE}" "${web_pid}"
+  echo "  启动 wist-center-web：${WEB_URL} (pid=${web_pid})"
   if wait_until "wist-center-web" web_status; then
-    WEB_ACTIVE=1
     return 0
   fi
   echo "  wist-center-web 未就绪（日志 ${WEB_LOG}）" >&2
   return 1
 }
 
-# 打印访问信息（只打印本脚本确实拉起/复用的部分）。
+# 打印访问信息。
+#
+# 参数 = 本次 start 选中的组件（deps|center|web）。**按实际可达状态**（端口/HTTP）判定，
+# 而不是读 start_center/start_web 设的全局量 —— 各组件在子 shell 里起（见 svc.sh），
+# 那些全局量出了子 shell 就是空，照它打印会「起了却什么都不显示」。
 print_access_info() {
+  local scheme token want
+  local do_center=0 do_web=0
+  for want in "$@"; do
+    [[ "${want}" == "center" ]] && do_center=1
+    [[ "${want}" == "web" ]] && do_web=1
+  done
+
   echo
-  echo "开发态已就绪，按 Ctrl+C 停止（也可另开终端 ./dev/stop-{center,web}.sh）。"
-  if [[ -n "${CENTER_PID}" ]]; then
-    echo "  中心 API：${CENTER_SCHEME}://${CENTER_ADDR}"
+  echo "开发态已就绪，后台常驻。停止：./dev/svc.sh stop"
+
+  if [[ "${do_center}" == "1" ]] && port_open "${CENTER_PORT}"; then
+    if center_tls_enabled; then scheme="https"; else scheme="http"; fi
+    echo "  中心 API：${scheme}://${CENTER_ADDR}"
     if [[ -n "${WARP_INSIGHT_CENTER_ADMIN_TOKEN:-}" ]]; then
       echo "  管理 token：来自环境变量 WARP_INSIGHT_CENTER_ADMIN_TOKEN（覆盖配置文件里的值）"
     else
-      echo "  管理 token：${ADMIN_TOKEN}（来自 ${CENTER_CONFIG}，长期有效）"
+      token="$(center_admin_token)"
+      [[ -n "${token}" ]] && echo "  管理 token：${token}（来自 ${CENTER_CONFIG}，长期有效）"
     fi
     echo "    （在管理页面填入该 token 后开启 5s 轮询刷新）"
     echo "    换一套凭据：删掉 ${CENTER_CONFIG} 后重跑本脚本（旧 token 立即失效）"
+    echo "  中心日志：${CENTER_LOG}"
   fi
-  if [[ -n "${WEB_ACTIVE}" ]]; then
+
+  if [[ "${do_web}" == "1" ]] && [[ "$(web_status)" == "200" ]]; then
     echo "  管理页面：${WEB_URL}"
+    echo "  前端日志：${WEB_LOG}"
   fi
-  [[ -n "${CENTER_PID}" ]] && echo "  中心日志：${CENTER_LOG}"
-  [[ -n "${WEB_PID}" ]] && echo "  前端日志：${WEB_LOG}"
   echo
 }
