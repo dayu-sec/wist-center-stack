@@ -329,7 +329,7 @@ start_center() {
 # 启动管理前端（后台）。vite 的 /api 反代到中心，目标取 CENTER_ADDR。
 start_web() {
   require_cmd npm
-  # 代理目标协议随 TLS 开关 —— 单独跑 start-web.sh 时 start_center 未设过，这里补上。
+  # 代理目标协议随 TLS 开关 —— 只起 web（不跑 start_center）时它没设过，这里补上。
   if center_tls_enabled; then CENTER_SCHEME="https"; else CENTER_SCHEME="http"; fi
   if [[ ! -d "${WEB_DIR}/node_modules" ]]; then
     echo "wist-center-web 依赖缺失：${WEB_DIR}/node_modules（先 cd 到该目录执行 npm install）" >&2
