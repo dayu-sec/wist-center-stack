@@ -3,6 +3,13 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [Unreleased]
+
+### Changed
+
+- 同步 `sys/db/initdb/01_schema.sql`：`gateways` 表补网关状态**富化列**（机队 / 存储 / 数据面 /
+  主机资源），与 `wist-center` 0.5.0-alpha 同源。
+
 ## [0.1.0] - 2026-10-04
 
 ### Changed
