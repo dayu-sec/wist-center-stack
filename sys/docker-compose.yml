@@ -5,6 +5,8 @@
 #   web              ${WEB_PORT}:80        前端入口（nginx 静态 + /api 反代；默认 18080）
 #   postgres         ${PG_PORT}:5432       中心存储 PgStore（默认 55432）
 #   victoria-metrics ${VM_PORT}:8428       指标/历史时序（默认 28429）
+#   db-schema        无端口               一次性：每次 start 幂等套一遍 sys/db/initdb/01_schema.sql
+#                                          （center 等它成功才起；见该服务注释）
 #
 # 容器内端口是**应用契约**，写死（3100/80/5432/8428）；宿主端口才是变量 —— 两边不要写混。
 #
@@ -49,6 +51,34 @@ services:
       timeout: 5s
       retries: 12
 
+  # ── 库结构应用（一次性）：让**既有数据卷**也能拿到 schema 新增列 ──
+  #
+  # 为什么需要：`docker-entrypoint-initdb.d` **只在空 data 卷首次初始化时**执行，之后
+  # `sys/db/initdb/01_schema.sql` 的改动（新增列）根本到不了已有库 —— 中心会因写不出的列报 SQL 错。
+  # 该文件全是 `CREATE/ALTER … IF NOT EXISTS`（幂等），所以每次 start 都套一遍是安全的。
+  # `center` 依赖它 `service_completed_successfully`：schema 应用失败就不让中心带旧表结构起来。
+  db-schema:
+    container_name: wist-center-stack-db-schema
+    image: postgres:${PG_TAG}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: ${PG_USER}
+      PGPASSWORD: ${PG_PASSWORD}
+      PGDATABASE: ${PG_DB}
+    volumes:
+      - ${PG_INITDB_DIR}:/schema:ro
+    entrypoint:
+      - psql
+      - -v
+      - ON_ERROR_STOP=1
+      - -q
+      - -f
+      - /schema/01_schema.sql
+
   # ── 观测：指标/历史时序 ──
   victoria-metrics:
     container_name: wist-center-stack-vm
@@ -78,6 +108,8 @@ services:
   #
   # 配置与密钥**卷挂载注入**，不烘焙进镜像：${CENTER_CONFIG_DIR}（渲染出的 wist-center.toml + CA）
   # 挂到容器 /wist-center，容器内 WIST_CENTER_CONFIG 指向它。
+  # 制品镜像**另挂** ${CENTER_ARTIFACT_DIR} → /wist-center/artifacts（模板里 dir = "artifacts"）：
+  # 与 configs/ 分开（一个是密钥、一个是可重拉数据），备份分级互不牵连。
   # 容器内 listen_addr 由模板写成 0.0.0.0:3100（代码默认 127.0.0.1:3100，端口映射不进来）。
   # 中心自身不做 TLS，HTTPS 由前面的反代终止；public_url 的 host 必须落在服务器证书 SAN 内。
   # 运行身份 999:999（镜像里 `useradd -r wist`），宿主侧由 scripts/align-host-perms.sh 对齐。
@@ -93,11 +125,14 @@ services:
       WIST_CENTER_HMAC_SECRET: ${SEC_CENTER_HMAC_SECRET}
     volumes:
       - ${CENTER_CONFIG_DIR}:/wist-center
+      - ${CENTER_ARTIFACT_DIR}:/wist-center/artifacts
     ports:
       - "${CENTER_PORT}:3100"
     depends_on:
       postgres:
         condition: service_healthy
+      db-schema:
+        condition: service_completed_successfully
       victoria-metrics:
         condition: service_healthy
 

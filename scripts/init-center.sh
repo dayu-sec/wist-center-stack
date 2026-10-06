@@ -43,7 +43,7 @@ case "${DOMAIN}" in
     ;;
 esac
 
-mkdir -p "${CONFIG_DIR}/ca" "${CONFIG_DIR}/state" "${CONFIG_DIR}/artifacts"
+mkdir -p "${CONFIG_DIR}/ca" "${CONFIG_DIR}/state" "${STACK_ROOT}/artifacts"
 
 # ── 1) 控制中心 CA（信任根 + 服务器证书）：缺失才生成 ──
 # control-center.pem 是分发给所有网关的信任根（control_center.trust_bundle）；

@@ -35,6 +35,8 @@ system:
   value: http://victoria-metrics:8428
 - name: CENTER_CONFIG_DIR
   value: ./configs/center
+- name: CENTER_ARTIFACT_DIR
+  value: ./artifacts
 - name: WEB_NGINX_CONF
   value: ./configs/web/nginx.conf
 - name: PG_INITDB_DIR

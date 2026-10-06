@@ -15,8 +15,11 @@ ROOT_DIR="$(cd "${STACK_ROOT}/.." && pwd)"
 CENTER_CRATE="${ROOT_DIR}/wist-center"
 WEB_DIR="${ROOT_DIR}/wist-center-web"
 
-# 中心本地数据（JSON 文件存储 / 制品镜像）落这里。
+# 中心本地数据（JSON 文件存储 / pid）落这里（可随手清掉）。
 RUN_DIR="${STACK_ROOT}/.run/center"
+# 制品镜像目录：与发布态同一个位置（`<栈根>/artifacts`，compose 挂到 /wist-center/artifacts）。
+# **不放 .run/**：发布时下载/镜像下来的安装包是数据，不该跟着运行目录一起被清掉。
+ARTIFACT_DIR="${STACK_ROOT}/artifacts"
 CENTER_LOG="/tmp/wist-center.log"
 WEB_LOG="/tmp/wist-center-web.log"
 
@@ -288,7 +291,7 @@ ensure_center_tls() {
 # 启动中心后端（后台）；需先 resolve_dependencies + build_center + ensure_center_config。
 start_center() {
   local center_bin="${CENTER_CRATE}/target/debug/wist-center"
-  mkdir -p "${RUN_DIR}/artifacts"
+  mkdir -p "${ARTIFACT_DIR}"
 
   # TLS 关闭时这四项传空：中心把空值当未配置（明文 HTTP，public_url/ca_cert 保留配置文件值）。
   local tls_cert="" tls_key="" public_url="" ca_cert=""
@@ -309,7 +312,7 @@ start_center() {
     WIST_CENTER_CONFIG="${CENTER_CONFIG}" \
     WARP_INSIGHT_CENTER_LISTEN="${CENTER_ADDR}" \
     WARP_INSIGHT_CENTER_STORE_PATH="${RUN_DIR}/store.json" \
-    WARP_INSIGHT_CENTER_ARTIFACT_DIR="${RUN_DIR}/artifacts" \
+    WARP_INSIGHT_CENTER_ARTIFACT_DIR="${ARTIFACT_DIR}" \
     WARP_INSIGHT_CENTER_DATABASE_URL="${DATABASE_URL:-}" \
     WARP_INSIGHT_CENTER_VICTORIAMETRICS_URL="${VM_URL:-}" \
     WARP_INSIGHT_CENTER_SERVER_CERT_PATH="${tls_cert}" \

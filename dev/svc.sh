@@ -51,6 +51,14 @@ start_deps() {
       port_open "${PG_PORT}" && port_open "${VM_PORT}" && break
       sleep 0.5
     done
+    # schema **幂等套一遍**：文件全是 CREATE/ALTER … IF NOT EXISTS。
+    # 为什么要每次跑：docker-entrypoint-initdb.d **只在空 data 卷首次初始化时**执行，
+    # 之后 `01_schema.sql` 的改动（新增列）根本到不了已有库 —— 中心会因写不出的列报 SQL 错。
+    # 失败即报错（ON_ERROR_STOP），别让中心带着旧表结构起来。
+    echo "应用数据库 schema（幂等）：sys/db/initdb/01_schema.sql"
+    docker compose -f sys/docker-compose.yml --project-directory . exec -T postgres \
+      sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -q' \
+      <sys/db/initdb/01_schema.sql
     echo
     docker compose -f sys/docker-compose.yml --project-directory . ps postgres victoria-metrics
   )

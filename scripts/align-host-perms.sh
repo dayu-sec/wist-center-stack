@@ -5,7 +5,7 @@
 # 为什么需要它：
 #   center 容器**固定以 uid:gid 999:999 运行**（镜像里 `useradd -r wist`，compose 里也显式钉死）。
 #   bind 挂载在 Linux 上**不改变属主**（宿主是谁，容器里就是谁），于是两种稳定故障：
-#     · configs/center/state 属主是 root/部署账号且 755 → 容器写不出 JSON store / 制品
+#     · configs/center/state 属主是 root/部署账号且 755 → 容器写不出 JSON store / 制品镜像
 #       （Permission denied）→ center 启动报存储不可写；
 #     · configs/center/ca/*.key 是 600 且属主不是 999 → 容器读不到 CA 私钥。
 #   更麻烦的是：Docker 在 `up` 时会**自行**把缺失的 bind 源目录建成 root:root 755 ——
@@ -50,15 +50,16 @@ OWNER_GID="${SUDO_GID:-$(id -g)}"
   die "CONTAINER_GID 必须是数字 gid（收到 '${CONTAINER_GID}'）；它要与 compose 里 center 的 user: 一致"
 
 # 目标目录：<相对路径>:<权限>（组统一为 CONTAINER_GID）。
-#   configs/center/*：中心配置与密钥（容器读写 store/制品、读 CA；部署账号维护）——全部归部署账号，
+#   configs/center/*：中心配置、密钥与 JSON store（容器读写 store/读 CA；部署账号维护）——全部归部署账号，
 #     免得 Docker 先建出 root 属主的目录后部署账号自己都写不动。
+#   artifacts：制品镜像目录（容器要读写；与 configs/ 分开）。
 #   需要容器写的目录 2770（组可写 + setgid）；容器只读的 2755。
 TARGET_DIRS=(
+  "artifacts:2770"
   "configs:2755"
   "configs/center:2770"
   "configs/center/ca:2755"
   "configs/center/state:2770"
-  "configs/center/artifacts:2770"
   "configs/web:2755"
 )
 # 目标文件（**存在才处理**，不新建）：

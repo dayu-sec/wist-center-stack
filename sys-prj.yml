@@ -10,6 +10,7 @@ test_envs:
 # 默认模式本来就只收 git 入库文件，这里是护栏。
 ignore:
   - configs
+  - artifacts
 
 # 现场态：升级/重建时**不覆盖、也不删**的路径（glob，相对系统根）。
 #
@@ -17,6 +18,7 @@ ignore:
 preserve:
   - .env
   - configs
+  - artifacts
 
 # 备份选取分级（只表达“丢了什么代价”，**不触发任何删除**）。
 #   restore 档：丢了要重装 / 换身份 → `gops prj backup` 默认收，`gops prj restore` 放回。
@@ -24,9 +26,12 @@ preserve:
 # 与渲染进 config 的 admin token / hmac secret。
 #   注意：PostgreSQL 数据卷（pg 里的 store）与 VictoriaMetrics 时序**不在文件备份范围内** ——
 #   库丢了，网关凭现存的客户端证书会重连重建；时序本就是历史。要备库得单独 `pg_dump`。
+# 制品镜像（`artifacts/`，版本发布下载/镜像下来的安装包）走 **rebuild** 档：它们是从来源地址
+# （release 记录里的 origin）镜像来的，丢了可重新录入；要纳入默认备份就把它挪到 restore 档。
 backup:
   restore:
     - configs/center/ca
     - configs/center/wist-center.toml
     - configs/center/state/*.json
-  rebuild: []
+  rebuild:
+    - artifacts

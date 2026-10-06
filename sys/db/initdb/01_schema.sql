@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS gateways (
   health TEXT,
   memory_bytes BIGINT,
   cpu_percent DOUBLE PRECISION,
+  public_base_url TEXT,
   uptime_seconds BIGINT,
   agent_count BIGINT,
   online_agents BIGINT,
@@ -35,6 +36,9 @@ CREATE TABLE IF NOT EXISTS gateways (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_seen_at TIMESTAMPTZ
 );
+
+-- 幂等补列（既有库）：新建库的 CREATE 已含该列，老库靠这条补上（网关对外域名）。
+ALTER TABLE gateways ADD COLUMN IF NOT EXISTS public_base_url TEXT;
 
 -- 网关注册 Token（映射模型 GatewayEnrollmentToken）：只存 hash，限量/状态/有效期，
 -- 携带环境绑定与控制中心信任根。
@@ -85,9 +89,13 @@ CREATE TABLE IF NOT EXISTS release_records (
   component TEXT NOT NULL,
   version TEXT NOT NULL,
   artifact_url TEXT NOT NULL,
+  package_sha256 TEXT,
   status TEXT NOT NULL,
   published_at TIMESTAMPTZ NOT NULL
 );
+
+-- 幂等补列（既有库）：制品内容的 sha256（录入时算出 / 校验）。
+ALTER TABLE release_records ADD COLUMN IF NOT EXISTS package_sha256 TEXT;
 
 -- 升级计划（payload 为 JSON，含多目标/网关范围/多步执行）。
 CREATE TABLE IF NOT EXISTS upgrade_plans (

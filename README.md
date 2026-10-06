@@ -21,6 +21,11 @@
 | `web` | 管理前端入口（nginx：静态 + `/api` 反代到 center） | `${WEB_PORT}:80`（HTTP） | `dy-sec.tencentcloudcr.com/cloud/wist-center-web` |
 | `postgres` | 中心存储（PgStore） | `${PG_PORT}:5432` | `postgres:${PG_TAG}` |
 | `victoria-metrics` | 状态历史时序库 | `${VM_PORT}:8428` | `victoriametrics/victoria-metrics` |
+| `db-schema` | 一次性：每次 `start` 幂等套一遍 `sys/db/initdb/01_schema.sql` | 无 | `postgres:${PG_TAG}` |
+
+> `db-schema` 是**一次性任务**（exit 0 即完），`center` 依赖它 `service_completed_successfully`。
+> 存在原因：`docker-entrypoint-initdb.d` **只在空 data 卷首次初始化时**执行，之后 `01_schema.sql`
+> 的改动（新增列）到不了已有库；而该文件全是 `CREATE/ALTER … IF NOT EXISTS`，每次套一遍是安全的。
 
 > **镜像两处源**：两个发布流水线都双推 —— `ghcr.io/dayu-sec/*`（境外）与
 > `dy-sec.tencentcloudcr.com/cloud/*`（腾讯云 TCR，国内快）。compose 里的镜像源与 tag 都是变量：
@@ -43,15 +48,16 @@ wist-center-stack/
     sys_model.yml           # kind: docker-compose（gops run 据此分发到 docker compose）
     setting/vars.yml        # 系统变量定义（改默认值改这里）
     merged_vars.yml         # 生成：gops sys update
-    db/initdb/01_schema.sql # PostgreSQL 建表（首次初始化数据卷时执行；与 wist-center 同源）
+    db/initdb/01_schema.sql # PostgreSQL 建表（空卷首次初始化 + 每次 start 由 db-schema 幂等套一遍；与 wist-center 同源）
     workflows/operators.gxl # 系统运维流程（本地定义；含 localize 阶段扩展点）
     configs/
       center/wist-center.toml.tpl   # 中心配置模板（渲染出 configs/center/wist-center.toml）
       web/nginx.conf.tpl            # 前端站点配置模板（渲染出 configs/web/nginx.conf）
   values/                   # gops 值文件（sys_value.yml 生成；value.yml 客户覆盖，版本化）
   configs/                  # 运行期配置/密钥（现场生成，不入 git / 不入包）
-    center/                 # 发布态：wist-center.toml（由模板渲染）+ ca/（CA/证书）+ state/ + artifacts/
+    center/                 # 发布态：wist-center.toml（由模板渲染）+ ca/（CA/证书）+ state/
     web/                    # 发布态：nginx.conf（由模板渲染）
+  artifacts/                # 制品镜像（版本发布下载下来的安装包；本地数据，不入 git / 不入包）
   scripts/                  # 发布态初始化脚本（幂等；由 localize 阶段流程调用）
     gen-center-ca.sh        # 控制中心 CA + 服务器证书（一次性，手动或由 init-center 调用）
     init-center.sh          # 中心配置渲染值 + CA 备料（幂等）
@@ -67,9 +73,11 @@ wist-center-stack/
 ```
 
 > **数据目录**：
-> - 开发态的本地 JSON store 与制品镜像落在 `wist-center-stack/.run/`（已 gitignore）。
-> - 发布态落挂载卷 `configs/center/`（`state/` 存 JSON store、`artifacts/` 存制品镜像，
->   使用 PostgreSQL 时前者不用）；清 `.run` 只丢开发态本地数据。
+> - 开发态的本地 JSON store 落在 `wist-center-stack/.run/`（已 gitignore；可随手清）。
+> - **制品镜像统一落 `<栈根>/artifacts/`**（开发态与发布态同一个位置；发布态由 compose 挂到容器
+>   `/wist-center/artifacts`）—— 它是发布时下载/镜像下来的安装包，属数据、不属配置，故与 `configs/`
+>   分开（便于单独备份；备份分级见 `sys-prj.yml`）。
+> - 发布态配置/密钥落挂载卷 `configs/center/`（`state/` 存 JSON store；用 PostgreSQL 时不用）。
 
 ## 发布态（经 gops 管理）
 
@@ -149,15 +157,16 @@ compose 还挂这些路径：
    渲染；`configs/center/ca/control-center.pem` 是分发给网关的信任根。
 2. `sys/configs/web/nginx.conf.tpl` —— 前端站点配置**模板**。**仓库自带**，由 `gops sys localize`
    渲染到 `configs/web/nginx.conf`（静态托管 + SPA 深链回退 + 把 `/api` 反代到 `center:3100`）。
-3. `sys/db/initdb/01_schema.sql` —— PostgreSQL 建表脚本（**仓库自带**），挂在
-   `/docker-entrypoint-initdb.d`，**仅首次**初始化数据卷时执行。它与
-   `wist-center/docker/initdb/01_schema.sql` 同源，改中心 schema 时两处要同步。
+3. `sys/db/initdb/01_schema.sql` —— PostgreSQL 建表脚本（**仓库自带**）。挂**两处**：
+   ① `/docker-entrypoint-initdb.d`（**仅首次**初始化空数据卷时由 postgres 入口脚本执行）；
+   ② `db-schema` 一次性服务挂到 `/schema`，**每次 `start` 幂等套一遍**（覆盖既有数据卷的补列）。
+   它与 `wist-center/docker/initdb/01_schema.sql` 同源，改中心 schema 时两处要同步。
 
 ### 权限与运行身份（Linux 必读）
 
 `center` 镜像**固定以 `999:999` 运行**（镜像里 `useradd -r wist`；compose 里 `user:` 已显式钉死）。
 bind 挂载在 Linux 上**不改变属主**，所以宿主侧必须显式对齐，否则容器写不出 `state/`、读不到 CA 私钥。
-`scripts/align-host-perms.sh`（localize 流程会自动跑）把 `configs/center` 对齐成
+`scripts/align-host-perms.sh`（localize 流程会自动跑）把 `configs/center` 与 `artifacts/` 对齐成
 属主=部署账号、属组=999、目录 2770(setgid)、私钥 640。
 
 ### 起来之后

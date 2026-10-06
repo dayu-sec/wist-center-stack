@@ -1,6 +1,9 @@
 # 运行时状态 / 本地数据（开发态的本地 JSON store / 制品镜像 / pid）
 .run/
 
+# 中心制品镜像（版本发布下载/镜像下来的安装包）——本地数据，不入库；备走 `gops prj backup`
+/artifacts/
+
 # 中心**运行期**配置与密钥（现场生成；含 admin token / hmac secret / CA 私钥 / 服务器私钥 /
 # JSON store / 制品镜像）。声明模板在 sys/configs/ 随库入库。
 /configs/

@@ -77,6 +77,11 @@ system:
   # 中心配置与密钥目录（渲染出 wist-center.toml + CA），容器挂到 /wist-center
   - name: CENTER_CONFIG_DIR
     value: ./configs/center
+  # 制品镜像目录：版本发布时下载/镜像下来的安装包落这里。
+  # **与 configs/ 分开**（configs 里是生成的身份/密钥，制品是可重拉的数据），便于单独备份。
+  # 容器内挂到 /wist-center/artifacts（模板里 [artifacts] dir = "artifacts"）。
+  - name: CENTER_ARTIFACT_DIR
+    value: ./artifacts
   # 前端站点配置：由 sys/configs/web/nginx.conf.tpl 在 localize 时渲染到此（运行物，不入库）
   - name: WEB_NGINX_CONF
     value: ./configs/web/nginx.conf
