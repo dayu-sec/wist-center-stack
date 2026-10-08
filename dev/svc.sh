@@ -21,7 +21,7 @@
 #
 # 同一口径：start 后台常驻（不随本脚本退出/关终端而停）；已在跑则复用；停用 stop。
 # 可覆盖 env：见 lib.sh 头部（WIST_CENTER_TLS / WIST_CENTER_CONFIG / WARP_INSIGHT_CENTER_* …）。
-# 注：gwlinkd（网关宿主侧常驻，随网关走）在 gateway-stack/dev —— `./dev/link_local_center.sh`。
+# 注：gwlinkd（网关宿主侧常驻，随网关走）在 gateway-stack/dev —— 由那边的 `./dev/svc.sh start` 带起。
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 

@@ -214,9 +214,8 @@ gops run stop
 开发态仍用 `wist-center init-config` 生成 `~/.wist-center/wist-center.toml`（随机 admin token /
 hmac secret）；发布态不用它，改走上面的 gops 密钥。
 
-> **接入本机网关（dev 快速路）**：把本机网关栈接到这个中心，用 `wist-gateway-stack` 仓的
-> `./dev/link_local_center.sh` —— gwlinkd 是网关**宿主侧**常驻、随网关走，所以它归那仓而非本仓。
-> 产品路径是网关页面「链接上级」；CLI 只是 dev 捷径。
+> **接入本机网关**：把本机网关栈接到这个中心，在网关页「链接上级」提交接入链接即可 —— gwlinkd
+> （网关**宿主侧**常驻、随网关走）归 `wist-gateway-stack` 仓，由那边 `./dev/svc.sh start` 带起。
 
 前端如果没有装依赖，先执行一次：
 
