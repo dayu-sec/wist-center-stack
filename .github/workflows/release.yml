@@ -143,6 +143,9 @@ jobs:
               echo "::group::coscli 错误明细"
               find "${out}" -type f -exec sh -c 'echo "--- $1"; cat "$1"' _ {} \;
               echo "::endgroup::"
+              # 同时把明细塞进 annotation（换行转空格、转义 %、截断），便于在 Checks 页直接看到。
+              detail="$(find "${out}" -type f -exec cat {} \; | tr '\n' ' ' | sed -e 's/%/%25/g' -e 's/\r/ /g' | cut -c1-1500)"
+              echo "::error title=coscli 明细::$1 —— ${detail}"
             fi
             exit 1
           }
