@@ -258,4 +258,25 @@ hmac secret）；发布态不用它，改走上面的 gops 密钥。dev 的**站
 `sys/merged_vars.yml` 随仓入库、进包，所以 CI 里不必现算 —— 但改了 `sys/setting/vars.yml` 后，
 本地要跑一次 `gops sys update` 并把 `merged_vars.yml` 的变更一起提交。
 
+同一制品包还会（可选）推到**腾讯云 COS**，走官方 `coscli`，供中心 / CDN 按稳定 URL 拉取。
+**未配置下列仓库配置时该步骤自动跳过，不会让发布失败。** 需要一次性配置：
+
+| 类型 | 名称 | 说明 |
+|---|---|---|
+| Variables | `COS_BUCKET` | 桶名，含 APPID，如 `example-1250000000` |
+| Variables | `COS_REGION` | 地域，如 `ap-guangzhou` |
+| Variables | `COS_PREFIX` | 可选，对象键前缀，默认 `wist-center-stack` |
+| Secrets | `COS_SECRET_ID` | 腾讯云访问密钥 ID |
+| Secrets | `COS_SECRET_KEY` | 腾讯云访问密钥 Key |
+| Secrets | `COS_SESSION_TOKEN` | 可选，仅临时密钥（STS）场景需要 |
+
+上传的对象键（`<prefix>` = `COS_PREFIX`）：
+
+```
+<prefix>/<tag>/wist-center-stack-<tag>.tar.gz     # 按版本钉住，不可变
+<prefix>/latest/wist-center-stack-<tag>.tar.gz    # 便于“取最新”，文件名仍带版本
+```
+
+建议给这对密钥最小权限，只授权目标桶 / 前缀的写入（`PutObject`）。
+
 版本以仓库根 `version.txt` 为权威，用 `gx adm v_patch` / `v_feat` 升级、`gx adm tag_alpha` 打标签。
