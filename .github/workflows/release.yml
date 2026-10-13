@@ -104,15 +104,19 @@ jobs:
           COS_REGION: ${{ vars.COS_REGION }}
         run: |
           set -eu
+          # 去掉密钥里的空白字符：CI 里粘贴密钥常带入尾随换行/空格，会让签名报 SecretKey is invalid。
+          secret_id="$(printf '%s' "${COS_SECRET_ID}" | tr -d '[:space:]')"
+          secret_key="$(printf '%s' "${COS_SECRET_KEY}" | tr -d '[:space:]')"
+          session_token="$(printf '%s' "${COS_SESSION_TOKEN}" | tr -d '[:space:]')"
           # 明文写入 AK/SK，因此必须显式关掉 coscli 的密钥加密（disableencryption）。
           cat > "$HOME/.cos.yaml" <<EOF
           cos:
             base:
               protocol: https
               disableencryption: "true"
-              secretid: "${COS_SECRET_ID}"
-              secretkey: "${COS_SECRET_KEY}"
-              sessiontoken: "${COS_SESSION_TOKEN}"
+              secretid: "${secret_id}"
+              secretkey: "${secret_key}"
+              sessiontoken: "${session_token}"
             buckets:
               - name: "${COS_BUCKET}"
                 alias: "${COS_BUCKET}"
