@@ -133,7 +133,23 @@ jobs:
           file="artifacts/wist-center-stack-${TAG}.tar.gz"
           test -f "${file}"
           cfg="$HOME/.cos.yaml"
-          coscli cp "${file}" "cos://${COS_BUCKET}/${prefix}/${TAG}/wist-center-stack-${TAG}.tar.gz" -c "${cfg}"
-          coscli cp "${file}" "cos://${COS_BUCKET}/${prefix}/latest/wist-center-stack-${TAG}.tar.gz" -c "${cfg}"
+          out="$PWD/coscli_output"
+          rm -rf "${out}"
+
+          # coscli 只打印汇总，失败明细落在 coscli_output/<时间>/ 下；失败时打印出来。
+          dump_err() {
+            echo "::error::$1"
+            if [ -d "${out}" ]; then
+              echo "::group::coscli 错误明细"
+              find "${out}" -type f -exec sh -c 'echo "--- $1"; cat "$1"' _ {} \;
+              echo "::endgroup::"
+            fi
+            exit 1
+          }
+
+          coscli cp "${file}" "cos://${COS_BUCKET}/${prefix}/${TAG}/wist-center-stack-${TAG}.tar.gz" -c "${cfg}" \
+            || dump_err "COS 上传失败（版本键）"
+          coscli cp "${file}" "cos://${COS_BUCKET}/${prefix}/latest/wist-center-stack-${TAG}.tar.gz" -c "${cfg}" \
+            || dump_err "COS 上传失败（latest 键）"
           echo "COS 上传完成，当前前缀内容："
-          coscli ls "cos://${COS_BUCKET}/${prefix}/" -c "${cfg}"
+          coscli ls "cos://${COS_BUCKET}/${prefix}/" -c "${cfg}" || dump_err "COS 列表失败"
