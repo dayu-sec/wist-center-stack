@@ -158,5 +158,7 @@ jobs:
             || dump_err "COS 上传失败（版本键）"
           coscli cp "${file}" "cos://${COS_BUCKET}/${prefix}/latest/wist-center-stack-${TAG}.tar.gz" -c "${cfg}" \
             || dump_err "COS 上传失败（latest 键）"
-          echo "COS 上传完成，当前前缀内容："
-          coscli ls "cos://${COS_BUCKET}/${prefix}/" -c "${cfg}" || dump_err "COS 列表失败"
+          echo "COS 上传完成。"
+          # 列表仅用于验证展示；若密钥没有 cos:GetBucket 权限，不应让整个发布失败。
+          coscli ls "cos://${COS_BUCKET}/${prefix}/" -c "${cfg}" \
+            || echo "::warning::COS 列表失败（可能是密钥缺少 cos:GetBucket 权限）；上传本身已成功。"
