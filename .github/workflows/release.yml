@@ -63,7 +63,9 @@ jobs:
           files: artifacts/*.tar.gz
 
   # 可选：把同一制品包推到腾讯云对象存储（COS），供中心 / CDN 等按稳定 URL 拉取。
-  # 未配置下方 Variables/Secrets 时整段自动跳过，不会让发布失败。
+  # 未配置 Variables（COS_BUCKET 为空）时整段自动跳过，不会让发布失败；
+  # 一旦设置了 COS_BUCKET 就视为启用，此时密钥缺失会直接报错（便于发现漏配）。
+  # 注意：`secrets` 上下文在 step 级 if 里不可用，因此启用判定只看 vars。
   #   仓库 Variables：COS_BUCKET（含 -APPID，如 example-1250000000）、COS_REGION（如 ap-guangzhou）、
   #                   可选 COS_PREFIX（对象键前缀，默认 wist-center-stack）
   #   仓库 Secrets：  COS_SECRET_ID、COS_SECRET_KEY（走临时密钥时再加可选 COS_SESSION_TOKEN）
@@ -81,7 +83,7 @@ jobs:
           path: artifacts
 
       - name: Install coscli
-        if: ${{ vars.COS_BUCKET != '' && secrets.COS_SECRET_ID != '' }}
+        if: ${{ vars.COS_BUCKET != '' }}
         run: |
           set -eu
           ver="v1.0.9"
@@ -93,7 +95,7 @@ jobs:
           "$HOME/.local/bin/coscli" --version
 
       - name: Write coscli config
-        if: ${{ vars.COS_BUCKET != '' && secrets.COS_SECRET_ID != '' }}
+        if: ${{ vars.COS_BUCKET != '' }}
         env:
           COS_SECRET_ID: ${{ secrets.COS_SECRET_ID }}
           COS_SECRET_KEY: ${{ secrets.COS_SECRET_KEY }}
@@ -119,7 +121,7 @@ jobs:
           EOF
 
       - name: Upload to COS
-        if: ${{ vars.COS_BUCKET != '' && secrets.COS_SECRET_ID != '' }}
+        if: ${{ vars.COS_BUCKET != '' }}
         env:
           COS_BUCKET: ${{ vars.COS_BUCKET }}
           COS_PREFIX: ${{ vars.COS_PREFIX }}
