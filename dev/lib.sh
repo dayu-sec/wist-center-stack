@@ -437,7 +437,7 @@ ensure_center_tls() {
   openssl x509 -req -in "${CENTER_TLS_DIR}/server.csr.pem" \
     -CA "${CENTER_TLS_CA_CERT}" -CAkey "${CENTER_TLS_CA_KEY}" \
     -CAserial "${CENTER_TLS_DIR}/control-center.srl" -CAcreateserial \
-    -out "${CENTER_TLS_CERT}" -days 825 -extfile "${CENTER_TLS_DIR}/server.ext" >/dev/null 2>&1
+    -out "${CENTER_TLS_CERT}" -days 397 -extfile "${CENTER_TLS_DIR}/server.ext" >/dev/null 2>&1
   chmod 600 "${CENTER_TLS_KEY}"
   printf '%s' "${san}" >"${CENTER_TLS_DIR}/server.san"
   echo "  共享站点 CA（锚）：${CENTER_TLS_CA_CERT}"

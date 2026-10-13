@@ -14,7 +14,8 @@
 #   scripts/gen-center-ca.sh identity/center center.warpinsight.example 10.0.0.8
 #
 # 可覆盖环境变量：
-#   CA_CN / DAYS   CA 主题名 / 有效期天数（默认 WarpInsight Control Center CA / 3650）
+#   CA_CN / DAYS           CA 主题名 / **CA** 有效期天数（默认 WarpInsight Control Center CA / 3650）
+#   SERVER_DAYS            服务器**叶证书**有效期天数（默认 397 —— Apple 平台校验器要求 TLS 服务器证书 ≤ 398 天）
 #   FORCE=1        已存在 CA 时强制重新生成（会换掉公章，已分发的信任根全部失效）
 #
 # 关键：服务器证书 SAN 必须覆盖 center 的 WARP_INSIGHT_CENTER_PUBLIC_URL 主机名/IP。
@@ -32,6 +33,9 @@ SERVER_CN="${2:-center.warpinsight.example}"
 EXTRA_SANS="${3:-}"
 CA_CN="${CA_CN:-WarpInsight Control Center CA}"
 DAYS="${DAYS:-3650}"
+# 叶证书单独设有效期：Apple 平台校验器（macOS/iOS 上的 rustls/reqwest 走的就是它）
+# 要求 TLS 服务器证书 ≤ 398 天；超了报 CSSMERR_TP_CERT_SUSPENDED。CA（根）不受此限，保持长有效期。
+SERVER_DAYS="${SERVER_DAYS:-397}"
 
 command -v openssl >/dev/null 2>&1 || { echo "错误: 需要 openssl" >&2; exit 1; }
 
@@ -78,16 +82,20 @@ if [[ -n "${EXTRA_SANS}" ]]; then
   done
 fi
 
-# 用 SAN 配置签证书（现代 TLS 客户端只认 SAN，不认 CN）
+# 用 SAN + 扩展配置签证书（现代 TLS 客户端只认 SAN，不认 CN）：
+#   extendedKeyUsage=serverAuth 是**必需**的 —— 缺它 Apple 平台校验器判「Invalid Extended Key Usage for policy」。
 cat > "${OUT_DIR}/control-center-server.ext" <<EOF
 subjectAltName = ${san_list}
+extendedKeyUsage = serverAuth
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature,keyEncipherment
 EOF
 
-echo "==> [3/4] 用 CA 签发中心服务器证书（SAN: ${san_list}）"
+echo "==> [3/4] 用 CA 签发中心服务器证书（SAN: ${san_list}；有效期 ${SERVER_DAYS} 天）"
 openssl x509 -req -in "${OUT_DIR}/control-center-server.csr" \
   -CA "${OUT_DIR}/control-center.pem" \
   -CAkey "${OUT_DIR}/control-center-ca.key" \
-  -CAcreateserial -days "${DAYS}" -sha256 \
+  -CAcreateserial -days "${SERVER_DAYS}" -sha256 \
   -extfile "${OUT_DIR}/control-center-server.ext" \
   -out "${OUT_DIR}/control-center-server.crt"
 

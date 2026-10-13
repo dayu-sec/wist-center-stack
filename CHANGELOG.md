@@ -3,7 +3,7 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
-## [未发布]
+## [0.1.2-alpha] - 2026-10-13
 
 ### Changed
 
@@ -66,6 +66,24 @@
   /home/wist/.wist-center/ca`」的启动崩溃。**旧现场升级**：把已生成的 `gateway-client-ca.{pem,key.pem}`
   先搬进 `identity/center/` —— 缺失会被重新生成，但那会**换 CA**、使已签发的网关客户端证书全部失效
   （只能换 `gateway_id` 重入网）。
+
+### Added
+
+- **中心后端开服务端 TLS + 校网关客户端证书（mTLS）**：compose 给 `center` 服务配
+  `WARP_INSIGHT_CENTER_SERVER_CERT_PATH` / `WARP_INSIGHT_CENTER_SERVER_KEY_PATH`（挂在只读的
+  `/wist-center/ca` = 站点身份 `identity/center/`）→ 中心在容器 3100 上起 **HTTPS**，客户端证书
+  **可选**（首注册网关还没有证书；无证书不等于未鉴权，应用层再判）。网关**直连 3100** 走 mTLS；
+  `web` 容器 `/api` 上游随之由 `http://center:3100` 改为 `https://center:3100`（`proxy_ssl_verify off`
+  —— 容器内同一份只读挂载身份）。**之前**中心自身不做 TLS，网关的 mTLS 客户端证书**无处可验**。
+
+### Fixed
+
+- **中心服务器叶证书缺扩展 + 有效期过长（Apple 平台校验器直接拒）**：`scripts/ensure-center-server-cert.sh`
+  与 `scripts/gen-center-ca.sh` 签叶时**只写 `subjectAltName`**，缺 `extendedKeyUsage=serverAuth` /
+  `basicConstraints` / `keyUsage`，且有效期默认 3650 天。macOS 上的网关（rustls/reqwest →
+  `rustls_platform_verifier` / Apple Security）会拒：缺 EKU → `Invalid Extended Key Usage for policy`；
+  > 398 天 → `CSSMERR_TP_CERT_SUSPENDED`。现补齐三扩展，并把**叶证书**有效期默认收到 **397 天**
+  （CA/根不受此限，仍 3650；`dev/lib.sh` 的本地叶证书同步 `825 → 397`）。
 
 ## [0.1.2-alpha] - 2026-10-06
 

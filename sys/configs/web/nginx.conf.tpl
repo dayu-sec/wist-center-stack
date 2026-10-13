@@ -6,7 +6,8 @@
 # 职责：**终止 TLS** + 托管前端静态产物 + SPA 深链回退 + 把 /api 反代到 center 容器。
 # 本页 nginx 在容器内 **443** 上跑 **HTTPS**：服务器证书/私钥只读挂载自站点身份
 # `identity/center/control-center-server.{crt,key}`（由站点 CA 签，SAN 覆盖对外域名；见 scripts/init-center.sh），
-# 宿主发布到 ${WEB_PORT}（默认 18080）。/api 反代到 center 容器 3100（容器网络内**明文**，中心自身不做 TLS）。
+# 宿主发布到 ${WEB_PORT}（默认 18080）。/api 反代到 center 容器 3100（**https**：中心开了
+# 服务端 TLS，且其客户端证书校验是**可选**的 —— 浏览器管理面不带客户端证书也能通）。
 # 与开发态 vite 代理对齐：/api 前缀保留、原样透传。
 
 server {
@@ -26,9 +27,11 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # /api 反代到中心（容器内 3100）。proxy_pass 不带 URI、也不 rewrite —— 原样透传 /api/...。
+    # /api 反代到中心（容器内 3100，**https**）。proxy_pass 不带 URI、也不 rewrite —— 原样透传 /api/...。
+    # proxy_ssl_verify off：中心的服务器证书由站点 CA-S 签发，容器内这一跳不做链校验（同一份只读挂载身份）。
     location /api/ {
-        proxy_pass http://center:3100;
+        proxy_pass https://center:3100;
+        proxy_ssl_verify off;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;

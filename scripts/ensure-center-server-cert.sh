@@ -11,7 +11,7 @@
 #   scripts/ensure-center-server-cert.sh [身份目录] [对外域名] [附加 SAN（逗号分隔的域名/IP）]
 #     scripts/ensure-center-server-cert.sh identity/center center.example.com 10.0.0.8
 #
-# 环境：DAYS（有效期天数，默认 3650）
+# 环境：DAYS（**叶证书**有效期天数，默认 397 —— Apple 平台校验器要求 TLS 服务器证书 ≤ 398 天）
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,7 +24,7 @@ CA_KEY="${DIR}/control-center-ca.key"
 CRT="${DIR}/control-center-server.crt"
 KEY="${DIR}/control-center-server.key"
 SAN_FILE="${DIR}/control-center-server.san"
-DAYS="${DAYS:-3650}"
+DAYS="${DAYS:-397}"
 
 note() { echo "  $*"; }
 
@@ -63,7 +63,16 @@ fi
 mkdir -p "${DIR}"
 openssl genrsa -out "${KEY}" 4096 >/dev/null 2>&1
 openssl req -new -key "${KEY}" -subj "/CN=${DOMAIN}" -out "${DIR}/.center-server.csr" >/dev/null 2>&1
-printf 'subjectAltName = %s\n' "${WANT}" >"${DIR}/.center-server.ext"
+# 叶证书扩展**必须**齐：
+#   extendedKeyUsage=serverAuth —— 缺它 Apple/macOS 平台校验器直接判「Invalid Extended Key Usage for policy」；
+#   basicConstraints + keyUsage —— 规范叶证书、也给严格客户端看。
+# 只有 SAN 是不够的：`security verify-cert -p ssl` 会拒（rustls/reqwest 在 macOS 上走的就是这套平台校验）。
+{
+  printf 'subjectAltName = %s\n' "${WANT}"
+  printf 'extendedKeyUsage = serverAuth\n'
+  printf 'basicConstraints = critical,CA:FALSE\n'
+  printf 'keyUsage = critical,digitalSignature,keyEncipherment\n'
+} >"${DIR}/.center-server.ext"
 openssl x509 -req -in "${DIR}/.center-server.csr" \
   -CA "${CA_CRT}" -CAkey "${CA_KEY}" \
   -CAserial "${DIR}/control-center.srl" -CAcreateserial \
