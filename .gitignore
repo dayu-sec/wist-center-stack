@@ -4,11 +4,17 @@
 # 中心制品镜像（版本发布下载/镜像下来的安装包）——本地数据，不入库；备走 `gops prj backup`
 /artifacts/
 
-# 中心**运行期**配置与密钥（现场生成；含 admin token / hmac secret / CA 私钥 / 服务器私钥 /
-# JSON store / 制品镜像）。声明模板在 sys/configs/ 随库入库。
+# 中心**运行期**配置与密钥（现场生成；含 admin token / hmac secret / JSON store）。
+# 声明模板在 sys/configs/ 随库入库。
 /configs/
 # 同类目录的任何副本（`configs_x/` 等：同样是运行物，含私钥，绝不入库）
 /configs*/
+
+# 站点身份（dev/prod **共用**）：CA / 服务器证书 / 私钥（`identity/center/control-center*`）
+# —— 现场生成、含私钥，绝不入库；契约与备份由 sys-prj.yml 的 `contract: - identity` 声明。
+/identity/
+# 同类目录的任何副本（`identity_x/` 等：同样含私钥）
+/identity*/
 
 # ===== gops 生成物 =====
 # 变量解析结果（gops sys update / package 生成）
@@ -18,8 +24,13 @@ sys/resolved_vars.yml
 # 值文件：忽略派生的值文件，保留客户覆盖 values/value.yml（版本化）
 values/*
 !values/value.yml
-# .env 由 gops sys localize 生成（非密钥配置；密钥走 ${SEC_xxx} 不落盘）
+# .env 由 gops sys localize 生成（非密钥配置）
 .env
+
+# 密钥文件目录（栈根 `.wist/sec-value.yml`：admin token / hmac secret，中心用 ${SEC_*} 从它解析）
+/.wist/
+# orion-sec 默认密钥目录（`.galaxy/sec_value.yml` / `~/.galaxy/sec_value.yml`）
+/.galaxy/
 
 # 中心身份备份产物（含私钥，别入库）
 wist-center-backup-*.tar.gz

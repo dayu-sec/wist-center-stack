@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 生成 WarpInsightCenter 控制面 CA 与服务器证书
+# 生成 WistCenter 控制面 CA 与服务器证书
 #
 # 产物：
 #   control-center.pem        信任根（CA 证书，公开）→ 作为 Gateway 的
@@ -11,7 +11,7 @@
 #   scripts/gen-center-ca.sh [输出目录] [服务端主机名] [附加 SAN]
 #
 # 附加 SAN 用逗号分隔（备用域名 / IP），按形如 1.2.3.4 自动判别 IP:，其余 DNS:：
-#   scripts/gen-center-ca.sh configs/center/ca center.warpinsight.example 10.0.0.8
+#   scripts/gen-center-ca.sh identity/center center.warpinsight.example 10.0.0.8
 #
 # 可覆盖环境变量：
 #   CA_CN / DAYS   CA 主题名 / 有效期天数（默认 WarpInsight Control Center CA / 3650）
@@ -24,8 +24,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 默认输出到 ~/.wist-center/ca（本地开发）；服务器部署可用绝对路径覆盖
-OUT_DIR="${1:-${HOME}/.wist-center/ca}"
+# 默认输出到站点身份目录 identity/center（dev/prod 共用、整体作对外契约）；可用绝对路径覆盖。
+OUT_DIR="${1:-identity/center}"
 # 默认与 WARP_INSIGHT_CENTER_PUBLIC_URL 默认值（https://center.warpinsight.example）对齐
 SERVER_CN="${2:-center.warpinsight.example}"
 # 附加 SAN：逗号分隔的域名/IP，追加到 DNS:${SERVER_CN}

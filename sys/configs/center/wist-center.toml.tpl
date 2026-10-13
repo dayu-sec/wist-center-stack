@@ -3,19 +3,30 @@
 # dst: configs/center/wist-center.toml（sys/docker-compose.yml 把 configs/center 挂到容器 /wist-center）
 # 渲染值：configs/center/wist-center.value.json（scripts/init-center.sh 生成）
 #
-# 与 `wist-center/wist-center.toml`（init-config 模板）键名完全一致。
+# **两份配置**（对齐 foundation/config-and-state-layout §5）：
+#   本模板渲染出**主配置**（R，可重渲的交付物）—— 只放「随部署环境渲染」的项；
+#   **站点现场事实**（`[server] public_url`）在**现场态**（S），且按「声明 / 值」分开：
+#   声明 `identity/center/wist-center-pub.toml` 只写 `${VAR}`（由 **tpl 渲染**，重渲也动不到现场），
+#   值在同目录 `.env`（`scripts/init-center-pub.sh` 按缺补齐，**永不重渲**）；compose 用
+#   `WIST_CENTER_PUB_CONFIG` 指过去。中心启动时读**两份**并合并：
+#   段可重合，**叶子键不许重复**（重复即拒启）—— 所以这里**不写** public_url。
+#
+# 键与 `wist-center/wist-center.toml`（init-config 模板）保持一致（同样不含 public_url）。
 # 两处与容器强相关：
 #   - listen_addr 必须是 0.0.0.0:3100（代码默认 127.0.0.1:3100，端口映射不进来）；
-#   - admin_token / hmac_secret 引用**容器环境变量**，由 compose 从 gops 密钥（${SEC_xxx}）注入，
-#     明文不落盘、不入库。
+#   - admin_token / hmac_secret 写 `${SEC_*}` 占位：由中心加载时从**密钥文件**解析
+#     （`WIST_CENTER_SEC_FILE` 指向的 `<栈根>/.wist/sec-value.yml`，键 center_admin_token /
+#     center_hmac_secret），明文不落盘、不入库。
 [server]
 listen_addr = "0.0.0.0:3100"
-# 中心对外地址：用于生成网关初始化 URL，必须落在控制中心服务器证书的 SAN 内。
-public_url = "{{public_url}}"
+# 中心对外地址（public_url）**不在这里**：它是**站点现场事实**（现场态），声明写在栈根
+# `identity/center/wist-center-pub.toml`（只写 `${VAR}`、由 **tpl 渲染**，可随版本重渲），
+# 值在同目录 `.env`（scripts/init-center-pub.sh 按缺补齐，取 CENTER_DOMAIN，**永不重渲**）；
+# compose 用 WIST_CENTER_PUB_CONFIG 指过去。必须落在控制中心服务器证书的 SAN 内。
 # 网关 ↔ 中心 wire 协议版本（写入网关 config.toml 的 [protocol] version）。
 protocol_version = "1.0"
-# 管理面 token：由容器环境变量提供（compose 从 ${SEC_CENTER_ADMIN_TOKEN} 注入）。
-admin_token = "${WIST_CENTER_ADMIN_TOKEN}"
+# 管理面 token：由密钥文件提供（`${SEC_CENTER_ADMIN_TOKEN}` ← .wist/sec-value.yml 的 center_admin_token）。
+admin_token = "${SEC_CENTER_ADMIN_TOKEN}"
 
 [store]
 # 有值 → PostgreSQL（PgStore）；留空 → 本地 JSON 文件存储（store_path）。
@@ -28,9 +39,9 @@ store_path = "{{store_path}}"
 victoriametrics_url = "{{victoriametrics_url}}"
 
 [security]
-# RegistToken 派生密钥（HMAC-SHA256）：由容器环境变量提供（compose 从 ${SEC_CENTER_HMAC_SECRET} 注入）。
+# RegistToken 派生密钥（HMAC-SHA256）：由密钥文件提供（`${SEC_CENTER_HMAC_SECRET}` ← .wist/sec-value.yml 的 center_hmac_secret）。
 # 轮换该密钥不影响既有凭据：中心只存派生结果，不重算。
-hmac_secret = "${WIST_CENTER_HMAC_SECRET}"
+hmac_secret = "${SEC_CENTER_HMAC_SECRET}"
 # 运行期凭据（RUNTIME_TOKEN）有效期秒数，默认 30 天。
 credential_ttl_seconds = 2592000
 # 控制中心 CA 证书（分发给网关作 control_center.trust_bundle）。
@@ -51,3 +62,15 @@ object_storage_secret_key = ""
 [enrollment]
 # 启动时写入 store（仅缺失时写入）的网关种子凭据，每项 `gateway_id:token`。
 gateway_credentials = []
+
+# 本进程自己的运行日志（env_logger，走 log facade）。
+# 落文件（相对本配置目录解析 → 已挂载的 /wist-center/logs/，自动建父目录），写满自轮转。
+# 注意：给了 `file` 就**不再**写 stderr（`docker logs` 看不到中心自身日志；打开失败会回落 stderr）。
+# `RUST_LOG` 环境变量仍优先于 `level`。
+[log]
+level  = "info"   # 或 "wist_center=debug,hyper=warn"
+format = "text"   # 或 "json"（结构化行，便于日志采集）
+file            = "logs/wist-center.log"
+max_bytes       = 67108864   # 单文件上限（字节，写满轮转成 .1/.2/…；缺省 64 MiB）
+keep_files      = 4          # 保留分卷数（0 = 不留历史；缺省 4）
+max_seconds     = 604800     # 分卷保留时长（秒，0 = 不按时间清；缺省 7 天）

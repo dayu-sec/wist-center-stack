@@ -3,6 +3,70 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [未发布]
+
+### Changed
+
+- **`wist-center` 配置分层（三文件 recipe，对齐 `foundation/layered-config-recipe.md`）**：站点事实
+  `[server] public_url` 从主配置搬到**现场态**，按「声明 / 值」分开：
+  - **声明** `wist-center-pub.toml`（只写 `${VAR}` 引用、**不含值**）—— 由
+    `sys/configs/center/wist-center-pub.toml.tpl` 经 `gx.tpl` 渲染到 `identity/center/wist-center-pub.toml`
+    （交付物，随版本重渲；值不在这里，所以重渲动不到现场）；
+  - **值** `identity/center/.env` —— 由 `scripts/init-center-pub.sh` 按缺补齐（`CENTER_PUBLIC_URL`）、永不重渲。
+  加载走共享 crate **`wist-config`**（`LayerSpec` + `load_layered_toml`）：「进程环境 > 同目录 `.env`」插值
+  `${VAR}` → 与主配置**无重复叶子**合并；未定义且无默认 → 拒启。`wist-center.toml` 模板与
+  `examples/local-dev.toml` 去掉 `public_url`；`init-config` 一并写出声明 + `.env` 骨架；compose 用
+  `WIST_CENTER_PUB_CONFIG=/wist-center/ca/wist-center-pub.toml` 指过去。env `WARP_INSIGHT_CENTER_PUBLIC_URL`
+  （含 dev 态）仍可覆盖。迁移：旧现场主配置里若仍有 `public_url`，与声明撞键会拒启 → `gops sys localize`
+  重渲一次主配置即可。
+
+- **文件组织对齐 `foundation/config-and-state-layout`**：站点身份（CA 证书 / CA 私钥 / 服务器证书 /
+  服务器私钥 / CA 序列号）从 `configs/center/ca/` **物理拆出**到栈根 **`identity/center/`**，并在
+  `sys-prj.yml` 整体声明为**对外契约**（`contract: - identity`）。`contract` 自足即「不覆盖 + 必收 +
+  不进包」，于是身份不再落 `backup`（旧形态是 `backup: configs/center/ca`）—— 契约归档因此可**独立
+  复原站点身份**（换机不必换锚 / 换 ID）；`configs/` 里只剩可重渲 / 可重建的渲染物、store、logs。
+  同步：compose 增加 `./identity/center → /wist-center/ca`（只读）挂载（模板 `ca_cert_path` 容器路径不变）；
+  `scripts/{init-center,gen-center-ca,align-host-perms}.sh` 的落点 / 权限改为 `identity/center`；`.gitignore`
+  新增忽略 `/identity/`；README「目录 / 数据目录 / localize 流程 / 挂载文件 / 权限」同步更新。
+
+  > 既有现场迁移（CA 不变 ⇒ 网关无感，只是文件位置搬动）：
+  > `mkdir -p identity/center && mv configs/center/ca/* identity/center/ && rmdir configs/center/ca`，
+  > 然后 `gops sys localize` —— 它①补权限对齐、②重渲主配置（去掉 `public_url`）、③渲现场态声明
+  > `identity/center/wist-center-pub.toml` 并按缺补齐 `identity/center/.env`。**必须重渲**：旧渲染的
+  > 主配置仍带 `public_url`，与新的现场态同键会让中心**拒启**（fail-closed，属主唯一）。
+
+- **镜像 tag 跟进**：中心 `v0.12.0-alpha`（去掉 `~/.wist-center/` 默认，修容器 `$HOME` 不可写的启动崩溃；
+  含此前的配置分层：站点事实 `public_url` 归现场态，升级需重渲主配置；另有公开 `GET /api/v1/version`）；
+  前端 `v0.4.0-alpha`（左下角新增前后端版本块：前端版本 = 发布 tag 注入，
+  后端版本读公开 `GET /api/v1/version`）；`GATEWAY_IMAGE` 默认值同步到 `v0.9.0-alpha`（与
+  `wist-gateway-stack` 当前钉的网关版本对齐 —— 这是中心生成「网关安装命令」时写进
+  `wist-center.toml` 的 `[artifacts] gateway_image` 默认值，现场仍可按实际网关栈镜像覆盖）。
+- **前端 `web` 容器自己终止 TLS**：nginx 从容器内 **80 明文** 改为 **443 HTTPS**（宿主仍发布到 `${WEB_PORT}`，默认 18080），
+  证书 = 站点身份 `identity/center/control-center-server.{crt,key}`（由站点 CA 签、SAN 覆盖 `CENTER_DOMAIN`）；
+  新增 `scripts/ensure-center-server-cert.sh`（幂等：SAN 覆盖就不重签，换域名/加 SAN 只重签**叶**、CA 不动）。
+  于是**不再需要**外部反代即可 `https://<CENTER_DOMAIN>:${WEB_PORT}`。
+- **`sys-prj.yml` 跟进 gops 2.3.0**：`preserve:` 更名为 `protect:`；`backup:` 由分级 `{restore, rebuild}`
+  改为**扁平列表**（旧形态在 2.3 下已无法加载，`gops sys localize` 直接报错）。`artifacts/`
+  属可重投的“可重建”，不再入表。路径与语义不变。
+- **中心凭据从配置里拆出，走密钥文件**：模板 `sys/configs/center/wist-center.toml.tpl` 的
+  `admin_token` / `hmac_secret` 不再走容器环境变量注入，改写 `${SEC_CENTER_ADMIN_TOKEN}` /
+  `${SEC_CENTER_HMAC_SECRET}`；值落**栈根 `.wist/sec-value.yml`**（键 `center_admin_token` /
+  `center_hmac_secret`，`scripts/init-center.sh` 缺则生成、键级补齐），compose 把 `.wist/` 只读挂进
+  center 容器并 `WIST_CENTER_SEC_FILE=/secrets/sec-value.yml`，中心加载时用 orion-sec 解析。
+  `.wist/` 已 `.gitignore`。（中心侧见 `wist-center` 的 orion-sec 接入。）
+- dev 态同步：`dev/svc.sh` / `dev/lib.sh` 把 `init-config` 生成的**字面** token/secret 迁到
+  `<栈根>/.wist/sec-value.yml`，配置改写为 `${SEC_CENTER_*}`，启动时导出 `WIST_CENTER_SEC_FILE`；
+  `./dev/svc.sh token` 改从密钥文件读。
+- **开发态不再用 `~/.wist-center/`，且与发布态共用 `identity/center/`**：dev 的配置/本地叶证书落
+  **栈内** `<栈>/dev/configs/center/`；**站点身份**（CA 信任根 + CA-G）改用发布态的 `identity/center/`
+  （dev 用共享 CA 签**自己的**叶证书、CA-G 也是同一把）—— 同一站、同一信任根。旧 `~/.wist-center/` 可删。
+- **需 `wist-center >= 0.12.0-alpha`**（配套）：中心去掉 `~/.wist-center/` 默认、CA 路径改以**配置目录**
+  为基准（见 wist-center CHANGELOG）。发布态 **CA-G** 落 `identity/center/` 并由容器**只读加载**
+  （`load_or_create` 存在即读、不写），修掉「容器 `$HOME` 不可写 → `failed to create
+  /home/wist/.wist-center/ca`」的启动崩溃。**旧现场升级**：把已生成的 `gateway-client-ca.{pem,key.pem}`
+  先搬进 `identity/center/` —— 缺失会被重新生成，但那会**换 CA**、使已签发的网关客户端证书全部失效
+  （只能换 `gateway_id` 重入网）。
+
 ## [0.1.2-alpha] - 2026-10-06
 
 ### Changed

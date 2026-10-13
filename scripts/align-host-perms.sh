@@ -7,7 +7,7 @@
 #   bind 挂载在 Linux 上**不改变属主**（宿主是谁，容器里就是谁），于是两种稳定故障：
 #     · configs/center/state 属主是 root/部署账号且 755 → 容器写不出 JSON store / 制品镜像
 #       （Permission denied）→ center 启动报存储不可写；
-#     · configs/center/ca/*.key 是 600 且属主不是 999 → 容器读不到 CA 私钥。
+#     · identity/center/*.key 是 600 且属主不是 999 → 容器读不到 CA 私钥、不提供信任根。
 #   更麻烦的是：Docker 在 `up` 时会**自行**把缺失的 bind 源目录建成 root:root 755 ——
 #   所以「属主取决于谁先创建」，只能在 `up` **之前**显式对齐。
 #
@@ -50,24 +50,41 @@ OWNER_GID="${SUDO_GID:-$(id -g)}"
   die "CONTAINER_GID 必须是数字 gid（收到 '${CONTAINER_GID}'）；它要与 compose 里 center 的 user: 一致"
 
 # 目标目录：<相对路径>:<权限>（组统一为 CONTAINER_GID）。
-#   configs/center/*：中心配置、密钥与 JSON store（容器读写 store/读 CA；部署账号维护）——全部归部署账号，
+#   configs/center/*：中心配置（渲染物）与 JSON store（容器读写 store；部署账号维护）——归部署账号，
 #     免得 Docker 先建出 root 属主的目录后部署账号自己都写不动。
+#   identity/*：站点身份（dev/prod 共用，容器只读挂载）—— 目录含私钥故 2750（组可读可进入）；
+#     容器只需读其中的 CA 证书（ca_cert_path）；setgid 让宿主 openssl 补签的新证书自动归容器组。
 #   artifacts：制品镜像目录（容器要读写；与 configs/ 分开）。
-#   需要容器写的目录 2770（组可写 + setgid）；容器只读的 2755。
+#   需要容器写的目录 2770（组可写 + setgid）；容器只读的 2755 / 2750。
 TARGET_DIRS=(
   "artifacts:2770"
   "configs:2755"
   "configs/center:2770"
-  "configs/center/ca:2755"
   "configs/center/state:2770"
   "configs/web:2755"
+  "identity:2755"
+  "identity/center:2750"
 )
 # 目标文件（**存在才处理**，不新建）：
-#   ca/*.key            —— 容器要读（CA 私钥 / 服务器私钥）；600 会让容器读不到，故 640。
-#   ca/*.srl            —— CA 序列号文件：宿主 openssl 重新签证书时会写它，必须归部署账号。
-#   wist-center.toml    —— 容器要读；含运行配置，故 640（不是 644）。
-TARGET_FILES=(configs/center/ca/*.key configs/center/ca/*.srl configs/center/wist-center.toml)
+#   私钥 / CA 序列号 / 含占位符的配置 —— 容器要读，且含密钥，故 640（不是 644）：
+#     identity/center/*.key（CA 私钥 / 服务器私钥）、identity/center/*.srl（CA 序列号，宿主 openssl 续签要写）、
+#     configs/center/wist-center.toml（含 `${SEC_*}` 占位）。
+#   公开证书 / 站点事实 —— 公开信息，644：
+#     identity/center/*.pem（CA 证书）、identity/center/*.crt（服务器证书）、
+#     identity/center/*-pub.toml（现场态声明）、identity/center/.env（现场态值）。
+TARGET_FILES_SECRET=(
+  identity/center/*.key
+  identity/center/*.srl
+  configs/center/wist-center.toml
+)
+TARGET_FILES_PUBLIC=(
+  identity/center/*.pem
+  identity/center/*.crt
+  identity/center/*-pub.toml
+  identity/center/.env
+)
 TARGET_FILE_MODE=640
+PUBLIC_FILE_MODE=644
 
 # 另一类：**容器要读写、但属主可能不是容器自己**的文件 —— 目前只有 JSON store（未用 PG 时）。
 #   容器建的库是 999:999（属主权限就够）→ **不能碰**，一碰就要提权；恢复/搬过来的文件属主是
@@ -102,10 +119,16 @@ for spec in "${TARGET_DIRS[@]}"; do
 done
 
 files_todo=()
-for f in "${TARGET_FILES[@]}"; do
+files_todo_mode=()
+for f in "${TARGET_FILES_SECRET[@]}"; do
   [[ -e "${f}" ]] || continue # glob 不匹配时是字面量，跳过
   [[ -f "${f}" ]] || { echo "  跳过 ${f}（存在但不是普通文件）" >&2; continue; }
-  [[ "$(state_of "${f}")" == "${OWNER_UID}:${CONTAINER_GID}:${TARGET_FILE_MODE}" ]] || files_todo+=("${f}")
+  [[ "$(state_of "${f}")" == "${OWNER_UID}:${CONTAINER_GID}:${TARGET_FILE_MODE}" ]] || { files_todo+=("${f}"); files_todo_mode+=("${TARGET_FILE_MODE}"); }
+done
+for f in "${TARGET_FILES_PUBLIC[@]}"; do
+  [[ -e "${f}" ]] || continue
+  [[ -f "${f}" ]] || { echo "  跳过 ${f}（存在但不是普通文件）" >&2; continue; }
+  [[ "$(state_of "${f}")" == "${OWNER_UID}:${CONTAINER_GID}:${PUBLIC_FILE_MODE}" ]] || { files_todo+=("${f}"); files_todo_mode+=("${PUBLIC_FILE_MODE}"); }
 done
 
 dbs_todo=()
@@ -173,11 +196,12 @@ for rel in "${dirs_todo[@]}"; do
   printf '  目录 %s：%s → %s:%s:%s\n' "${rel}" "${before}" "${OWNER_UID}" "${CONTAINER_GID}" "${mode}"
 done
 
-for f in "${files_todo[@]}"; do
+for i in "${!files_todo[@]}"; do
+  f="${files_todo[$i]}"; fmode="${files_todo_mode[$i]}"
   before="$(state_of "${f}")"
   chown "${OWNER_UID}:${CONTAINER_GID}" "${f}"
-  chmod "${TARGET_FILE_MODE}" "${f}"
-  printf '  文件 %s：%s → %s:%s:%s\n' "${f}" "${before}" "${OWNER_UID}" "${CONTAINER_GID}" "${TARGET_FILE_MODE}"
+  chmod "${fmode}" "${f}"
+  printf '  文件 %s：%s → %s:%s:%s\n' "${f}" "${before}" "${OWNER_UID}" "${CONTAINER_GID}" "${fmode}"
 done
 
 for f in "${dbs_todo[@]}"; do

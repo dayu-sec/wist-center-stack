@@ -3,12 +3,13 @@
 #
 # 组件（不给 = 默认全部：deps center web；也可写 all）：
 #   deps    PostgreSQL + VictoriaMetrics（docker，用发布态同一份 compose，只起这两个）
-#   center  中心后端（默认 https://127.0.0.1:3100；TLS 默认开，WIST_CENTER_TLS=0 关）
+#   center  中心后端（默认 https://center.dev.wist.lab:3100，监听 0.0.0.0:3100；TLS 默认开，WIST_CENTER_TLS=0 关）
 #   web     管理前端（vite dev，/api 反代到中心）
 #
 # 用法：
-#   ./dev/svc.sh start [组件…] [--no-build]   默认全部
-#   ./dev/svc.sh stop  [组件…]                默认全部（逆序停）
+#   ./dev/svc.sh start   [组件…] [--no-build] [--dry-run]   默认全部
+#   ./dev/svc.sh stop    [组件…]                            默认全部（逆序停）
+#   ./dev/svc.sh restart [组件…] [--no-build] [--dry-run]   停所选（逆序）再起回（正序）
 #   ./dev/svc.sh status
 #   ./dev/svc.sh token                        打印中心 admin token 与出处
 #
@@ -17,16 +18,18 @@
 #   ./dev/svc.sh start center web      # 只起中心 + 前端
 #   ./dev/svc.sh start deps            # 只起依赖（PG/VM）
 #   ./dev/svc.sh start center --no-build
+#   ./dev/svc.sh restart center        # 改了中心配置/代码后重启中心
 #   ./dev/svc.sh stop                  # 停全部
 #
-# 同一口径：start 后台常驻（不随本脚本退出/关终端而停）；已在跑则复用；停用 stop。
+# 同一口径：start 后台常驻（不随本脚本退出/关终端而停）；已在跑则复用；停用 stop；重启用 restart（= 停 + 起）。
 # 可覆盖 env：见 lib.sh 头部（WIST_CENTER_TLS / WIST_CENTER_CONFIG / WARP_INSIGHT_CENTER_* …）。
 # 注：gwlinkd（网关宿主侧常驻，随网关走）在 gateway-stack/dev —— 由那边的 `./dev/svc.sh start` 带起。
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 usage() {
-  sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  # 打印文件头的**注释块**（第 2 行起，到首个非注释行为止）：加/删注释行都不用改行号。
+  awk 'NR>=2 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
 }
 
 die() {
@@ -114,7 +117,7 @@ cmd_status() {
 
   if center_tls_enabled; then scheme="https"; else scheme="http"; fi
   if port_open "${CENTER_PORT}"; then
-    printf '  %-8s up   %s://%s\n' "center" "${scheme}" "${CENTER_ADDR}"
+    printf '  %-8s up   %s://%s\n' "center" "${scheme}" "${CENTER_PUBLIC_HOST}"
   else
     printf '  %-8s down\n' "center"
   fi
@@ -129,15 +132,16 @@ cmd_token() {
   require_cmd python3
   local token scheme
   token="$(center_admin_token)"
-  [[ -n "${token}" ]] || die "读不到 admin token（${CENTER_CONFIG}）"
+  [[ -n "${token}" ]] || die "读不到 admin token（${CENTER_SEC_FILE}；还没起过中心？先 ./dev/svc.sh start）"
   if center_tls_enabled; then scheme="https"; else scheme="http"; fi
   cat <<EOF
 中心 admin Bearer token（登录「${WEB_URL}」/ 打中心管理 API 都用它）：
 
   ${token}
 
-  读取自：${CENTER_CONFIG}
-  中心：  ${scheme}://${CENTER_ADDR}
+  读取自：${CENTER_SEC_FILE}（密钥文件，键 center_admin_token）
+           ← 配置里只写 \${SEC_CENTER_ADMIN_TOKEN}
+  中心：  ${scheme}://${CENTER_PUBLIC_HOST}
   页面：  ${WEB_URL}
 EOF
 }
@@ -148,10 +152,12 @@ cmd="${1:-}"
 [[ -n "${cmd}" ]] || { usage >&2; exit 2; }
 
 NO_BUILD=0
+DRY_RUN=0
 requested=()
 for arg in "$@"; do
   case "${arg}" in
     --no-build) NO_BUILD=1 ;;
+    --dry-run) DRY_RUN=1 ;;
     deps | center | web | all) requested+=("${arg}") ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; die "未知参数：${arg}" ;;
@@ -174,44 +180,71 @@ else
   done
 fi
 
+# 起所选组件（正序）。start 与 restart 共用。
+cmd_start_selected() {
+  require_cmd python3
+  require_cmd curl
+  echo "启动开发态组件：${selected[*]}"
+  [[ "${NO_BUILD}" == "1" ]] && echo "  （--no-build：跳过 cargo build）"
+  [[ "${DRY_RUN}" == "1" ]] && echo "  [dry-run] 只打印计划，不实际启动"
+  echo
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    for c in "${selected[@]}"; do
+      echo "  将要启动：${c}"
+    done
+    return 0
+  fi
+  failed=()
+  for c in "${selected[@]}"; do
+    # 子 shell：组件里的 die/exit 只结束子 shell，不掀翻整次 start。
+    if ( case "${c}" in
+           deps) start_deps ;;
+           center) up_center ;;
+           web) up_web ;;
+         esac ); then
+      :
+    else
+      failed+=("${c}")
+      echo "  [warn] ${c} 未成功，继续。" >&2
+    fi
+    echo
+  done
+  print_access_info "${selected[@]}"
+  [[ ${#failed[@]} -eq 0 ]] || { echo "未就绪：${failed[*]}" >&2; exit 1; }
+}
+
+# 停所选组件（逆序）。stop 与 restart 共用。
+cmd_stop_selected() {
+  echo "停止开发态组件（逆序）：$(
+    printf '%s ' "${selected[@]}" | awk '{for (i=NF; i>0; i--) printf "%s%s", $i, (i>1?" ":"\n")}'
+  )"
+  echo
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    echo "  [dry-run] 只打印计划，不实际停止"
+    return 0
+  fi
+  for ((i = ${#selected[@]} - 1; i >= 0; i--)); do
+    case "${selected[$i]}" in
+      deps) stop_deps ;;
+      center) down_center ;;
+      web) down_web ;;
+    esac
+    echo
+  done
+}
+
 case "${cmd}" in
   start)
-    require_cmd python3
-    require_cmd curl
-    echo "启动开发态组件：${selected[*]}"
-    [[ "${NO_BUILD}" == "1" ]] && echo "  （--no-build：跳过 cargo build）"
-    echo
-    failed=()
-    for c in "${selected[@]}"; do
-      # 子 shell：组件里的 die/exit 只结束子 shell，不掀翻整次 start。
-      if ( case "${c}" in
-             deps) start_deps ;;
-             center) up_center ;;
-             web) up_web ;;
-           esac ); then
-        :
-      else
-        failed+=("${c}")
-        echo "  [warn] ${c} 未成功，继续。" >&2
-      fi
-      echo
-    done
-    print_access_info "${selected[@]}"
-    [[ ${#failed[@]} -eq 0 ]] || { echo "未就绪：${failed[*]}" >&2; exit 1; }
+    cmd_start_selected
     ;;
   stop)
-    echo "停止开发态组件（逆序）：$(
-      printf '%s ' "${selected[@]}" | awk '{for (i=NF; i>0; i--) printf "%s%s", $i, (i>1?" ":"\n")}'
-    )"
+    cmd_stop_selected
+    ;;
+  restart)
+    echo "重启开发态组件（停 → 起）：${selected[*]}"
     echo
-    for ((i = ${#selected[@]} - 1; i >= 0; i--)); do
-      case "${selected[$i]}" in
-        deps) stop_deps ;;
-        center) down_center ;;
-        web) down_web ;;
-      esac
-      echo
-    done
+    cmd_stop_selected
+    cmd_start_selected
     ;;
   status)
     cmd_status
@@ -224,6 +257,6 @@ case "${cmd}" in
     ;;
   *)
     usage >&2
-    die "未知子命令：${cmd}（可用：start | stop | status | token）"
+    die "未知子命令：${cmd}（可用：start | stop | restart | status | token）"
     ;;
 esac

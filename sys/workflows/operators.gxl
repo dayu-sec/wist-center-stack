@@ -8,15 +8,27 @@ mod operators {
   // （galaxy-ops >= 1.3.4 / galaxy-flow >= 0.14）。合并后的配置以**环境变量**注入本子进程，
   // 用 $(printenv XXX) 读。每个动作都**幂等**（存在即跳过）——证书/密钥绝不能每次重生成。
   flow localize {
-    // 0) 确保运行期目录存在（localize 渲染目标落在 configs/ 下；Docker 会在 up 时自建，但那时属主
-    //    是 root，所以我们先建、随后 align-host-perms 归位）。
-    gx.cmd ( "mkdir -p configs/center configs/web" );
-    // ① 备料控制中心：CA（信任根 + 服务器证书）+ 渲染值 wist-center.value.json（缺什么补什么）。
+    // 0) 确保运行期/身份目录存在（渲染目标落 configs/，站点身份落 identity/；Docker 会在 up 时
+    //    自建缺失的挂载源，但那时属主是 root，所以我们先建、随后 align-host-perms 归位）。
+    gx.cmd ( "mkdir -p configs/center configs/web identity/center" );
+    // ① 备料控制中心：CA（信任根 + 服务器证书，落站点身份 identity/center）+ 渲染值
+    //    wist-center.value.json + 凭据密钥文件 `.wist/sec-value.yml`（缺什么补什么）。
     //    CA 已存在即跳过（换公章会让所有已分发信任根失效）。域名取合并后的值 CENTER_DOMAIN。
     gx.cmd ( "./scripts/init-center.sh configs/center $(printenv CENTER_DOMAIN)" );
+    // ①' 现场态（站点事实）：**声明 + 值分开**（docker-compose 口径）。
+    //     · **声明** `wist-center-pub.toml`（只写 `${VAR}` 引用、不含现场值）—— 与其它交付物一样
+    //       走 **tpl** 机制渲染（交付物，随版本覆盖；值不在这里，所以重渲动不到现场）；
+    //     · **值** 在同目录 `.env`（脚本按缺补齐，永不重渲）。
+    //     主配置里**不写** public_url，否则与声明撞键拒启。
+    gx.tpl (
+      tpl  : "./sys/configs/center/wist-center-pub.toml.tpl",
+      dst  : "./identity/center/wist-center-pub.toml",
+      data : "{}"
+    );
+    gx.cmd ( "./scripts/init-center-pub.sh identity/center" );
     // ② 渲染中心运行配置：模板 + value.json → configs/center/wist-center.toml（依赖 ①）。
-    //    模板里的 admin_token / hmac_secret 写的是 ${WIST_CENTER_*}，由容器环境变量（compose
-    //    从 gops 密钥注入）在运行期解析 —— 明文不落盘。
+    //    模板里的 admin_token / hmac_secret 写的是 `${SEC_CENTER_*}`，由中心加载时从密钥文件
+    //    （WIST_CENTER_SEC_FILE 指向的 .wist/sec-value.yml）解析 —— 明文不落盘。
     gx.tpl (
       tpl  : "./sys/configs/center/wist-center.toml.tpl",
       dst  : "./configs/center/wist-center.toml",
@@ -34,7 +46,7 @@ mod operators {
     );
     // ④ 宿主侧属主/权限对齐（Linux 专有；macOS/OrbStack 直接跳过）：
     //    center **固定以 999:999 运行**（compose 里显式钉死），而 Linux 的 bind 挂载**不改属主**
-    //    —— 未对齐就是稳定故障：容器写不出 state/ 与 artifacts/、读不到 ca/ 里的私钥。
+    //    —— 未对齐就是稳定故障：容器写不出 state/ 与 artifacts/、读不到 identity/ 里的私钥。
     //    还必须在 `docker compose up` **之前**：Docker 会把缺失的挂载源目录建成 root:root，
     //    属主一旦是 root，之后的部署账号就写不动了。
     gx.cmd ( "./scripts/align-host-perms.sh" );

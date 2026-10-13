@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
 # 备料控制中心配置的**渲染值** <配置目录>/wist-center.value.json（localize 里 gx.tpl 的输入），
-# 并在缺失时生成控制中心 CA（信任根 + 服务器证书）。
+# 并在缺失时生成控制中心 CA（信任根 + 服务器证书），以及中心凭据的**密钥文件**。
 #
 # 用法：
 #   scripts/init-center.sh <配置目录> <对外域名>
 #     scripts/init-center.sh configs/center center.example.com
+#
+# 落点（对齐 foundation/config-and-state-layout）：
+#   站点身份（CA / 服务器证书 / 私钥）→ 栈根 `identity/center/`（dev/prod 共用、整体作对外契约）；
+#     可用 env CENTER_IDENTITY_DIR 覆盖。它**不在**资源树（configs/）里，容器只读挂到 /wist-center/ca。
+#   渲染值 wist-center.value.json + store/logs → <配置目录>（configs/center，容器挂到 /wist-center）。
+#   现场态（站点事实 public_url）分「声明 / 值」：**声明** `identity/center/wist-center-pub.toml`
+#     （只写 `${VAR}`）由 tpl 机制渲染（可重渲）；**值**在同目录 `.env`，由
+#     scripts/init-center-pub.sh 按缺补齐（升级 / 重渲永不覆盖）。
+#   凭据密钥文件 → 栈根 `.wist/sec-value.yml`。
 #
 # 环境（gops 把合并后的系统变量以**环境变量**注入 localize 流程）：
 #   CENTER_DOMAIN          对外域名（第 2 参数缺省时用它）；也决定 public_url 与证书 SAN
@@ -14,7 +23,8 @@
 #   GATEWAY_IMAGE          生成网关安装命令用的镜像（写进 [artifacts] gateway_image）
 #
 # 幂等：CA 已存在即跳过（换公章会让所有已分发出去的信任根失效，须显式轮换）；
-#       value.json 内容与当前一致即不碰 mtime。
+#       value.json 内容与当前一致即不碰 mtime；
+#       密钥文件（<栈根>/.wist/sec-value.yml）按键补齐（已有的其它键与已有值一律保留）。
 set -euo pipefail
 
 CONFIG_DIR="${1:-configs/center}"
@@ -22,6 +32,16 @@ DOMAIN="${2:-${CENTER_DOMAIN:-}}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# 站点身份（dev/prod 共用）：控制中心 CA / 服务器证书 / 私钥放栈根 `identity/center/`，
+# **不进资源树**（configs/）、整体作对外契约（sys-prj.yml 的 `contract: - identity`）。
+# 容器只读挂它到 /wist-center/ca（模板 ca_cert_path 指向 /wist-center/ca/control-center.pem）。
+IDENTITY_DIR="${CENTER_IDENTITY_DIR:-${STACK_ROOT}/identity/center}"
+
+# 中心凭据的密钥文件：wist-center 配置里写 `${SEC_CENTER_ADMIN_TOKEN}` / `${SEC_CENTER_HMAC_SECRET}`，
+# 启动时由 `WIST_CENTER_SEC_FILE` 指向本文件解析（compose 只读挂 <栈根>/.wist → /secrets）。
+SEC_DIR="${STACK_ROOT}/.wist"
+SEC_FILE="${SEC_DIR}/sec-value.yml"
 
 PG_USER="${PG_USER:-demo}"
 PG_PASSWORD="${PG_PASSWORD:-demo}"
@@ -43,27 +63,60 @@ case "${DOMAIN}" in
     ;;
 esac
 
-mkdir -p "${CONFIG_DIR}/ca" "${CONFIG_DIR}/state" "${STACK_ROOT}/artifacts"
+mkdir -p "${IDENTITY_DIR}" "${CONFIG_DIR}/state" "${STACK_ROOT}/artifacts"
 
-# ── 1) 控制中心 CA（信任根 + 服务器证书）：缺失才生成 ──
+# ── 1) 控制中心 CA（信任根 + 服务器证书）：缺失才生成，落站点身份目录 ──
 # control-center.pem 是分发给所有网关的信任根（control_center.trust_bundle）；
 # 换它 = 换公章，已分发的信任根全部失效 → 非缺失一律不碰，轮换要显式 FORCE=1。
-if [[ -f "${CONFIG_DIR}/ca/control-center.pem" ]]; then
-  note "CA 已存在（${CONFIG_DIR}/ca/control-center.pem），跳过生成"
+if [[ -f "${IDENTITY_DIR}/control-center.pem" ]]; then
+  note "CA 已存在（${IDENTITY_DIR}/control-center.pem），跳过生成"
 else
-  note "生成控制中心 CA / 服务器证书（SAN: ${DOMAIN}）"
+  note "生成控制中心 CA / 服务器证书（SAN: ${DOMAIN}）→ ${IDENTITY_DIR}"
   CENTER_EXTRA_SANS="${CENTER_EXTRA_SANS:-}"
-  "${SCRIPT_DIR}/gen-center-ca.sh" "${CONFIG_DIR}/ca" "${DOMAIN}" "${CENTER_EXTRA_SANS}"
+  "${SCRIPT_DIR}/gen-center-ca.sh" "${IDENTITY_DIR}" "${DOMAIN}" "${CENTER_EXTRA_SANS}"
 fi
 
-# ── 2) 渲染值 value.json（gx.tpl 的输入）──
+# ── 1b) 服务器证书（叶）：SAN 必须覆盖对外域名（+ localhost/127.0.0.1）──
+#   前端反代（web 容器，见 sys/docker-compose.yml）用它终止 HTTPS；网关校 init_url 主机名也用它。
+#   **CA 不变** —— 换域名 / 加 SAN 只重签这张叶；幂等（已覆盖就不重签）。
+"${SCRIPT_DIR}/ensure-center-server-cert.sh" "${IDENTITY_DIR}" "${DOMAIN}" "${CENTER_EXTRA_SANS:-}"
+
+# 注：**现场态（站点事实 `public_url`）不在本脚本里** —— **声明** `${IDENTITY_DIR}/wist-center-pub.toml`
+#   （只写 `${VAR}`、可重渲）由 tpl 渲染；**值** `${IDENTITY_DIR}/.env` 由 scripts/init-center-pub.sh
+#   按缺补齐（升级 / 重渲永不覆盖；compose 用 WIST_CENTER_PUB_CONFIG 指过去）。
+
+# ── 2) 中心凭据落**密钥文件**（不进 value.json / 不进渲染出的 toml）──
+#   配置里只写 `${SEC_CENTER_ADMIN_TOKEN}` / `${SEC_CENTER_HMAC_SECRET}`，中心启动时用
+#   `WIST_CENTER_SEC_FILE` 从本文件解析（键 center_admin_token / center_hmac_secret
+#   → orion-sec 规范成 SEC_CENTER_ADMIN_TOKEN / SEC_CENTER_HMAC_SECRET）。
+#   **确保两键存在**：文件缺就建、键缺就补（已有的其它键与已有值一律保留）。
+mkdir -p "${SEC_DIR}"
+[[ -f "${SEC_FILE}" ]] || : >"${SEC_FILE}"
+python3 - "${SEC_FILE}" <<'PY'
+import re, secrets, sys
+path = sys.argv[1]
+with open(path) as handle:
+    text = handle.read()
+for key in ("center_admin_token", "center_hmac_secret"):
+    if re.search(rf"(?m)^\s*{key}\s*:", text):
+        print(f"  复用已有 {key}：{path}")
+        continue
+    if text and not text.endswith("\n"):
+        text += "\n"
+    text += f"{key}: {secrets.token_hex(24)}\n"
+    print(f"  已在密钥文件写入 {key}：{path}")
+with open(path, "w") as handle:
+    handle.write(text)
+PY
+chmod 600 "${SEC_FILE}"
+
+# ── 3) 渲染值 value.json（gx.tpl 的输入）──
 # 必须落在脚本里，不能在 operators.gxl 里 printf：GXL 字符串不做转义还原，且 /bin/sh 可能是 dash
 # （与 init-web-conf.sh 同一原因）。值本身都经过上面的域名校验 / 由环境变量给定，不含特殊字符。
 VALUE_JSON="${CONFIG_DIR}/wist-center.value.json"
 tmp="$(mktemp "${CONFIG_DIR}/.wist-center.value.XXXXXX")"
 cat >"${tmp}" <<EOF
 {
-  "public_url": "https://${DOMAIN}",
   "database_url": "postgres://${PG_USER}:${PG_PASSWORD}@postgres:5432/${PG_DB}",
   "store_path": "state/warp-insight-center-store.json",
   "victoriametrics_url": "${VICTORIA_METRICS_URL}",
@@ -79,7 +132,8 @@ if [[ -f "${VALUE_JSON}" ]] && cmp -s "${tmp}" "${VALUE_JSON}"; then
   note "渲染值与当前一致，跳过：${VALUE_JSON}"
 else
   mv -f "${tmp}" "${VALUE_JSON}"
-  note "已写渲染值：${VALUE_JSON}（public_url=https://${DOMAIN}）"
+  note "已写渲染值：${VALUE_JSON}（由 localize 渲染 wist-center.toml）"
 fi
 
-note "控制中心备料完成：${CONFIG_DIR}（CA、渲染值就绪；localize 随后渲染 wist-center.toml）"
+note "控制中心备料完成：配置 ${CONFIG_DIR} + 身份 ${IDENTITY_DIR}（CA、渲染值就绪；localize 随后渲染 wist-center.toml）"
+note "中心凭据密钥文件：${SEC_FILE}（键 center_admin_token / center_hmac_secret）"

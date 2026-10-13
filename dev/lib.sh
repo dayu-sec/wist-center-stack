@@ -27,25 +27,70 @@ WEB_LOG="/tmp/wist-center-web.log"
 CENTER_PID_FILE="${STACK_ROOT}/.run/center.pid"
 WEB_PID_FILE="${STACK_ROOT}/.run/web.pid"
 
-# 中心配置文件（持有持久化的 admin token / hmac secret，形状见 wist-center/wist-center.toml）。
-# 默认 ~/.wist-center/ —— 刻意不放在 .run/ 下：.run 是可随手清掉的运行目录，
-# 而这两项是长期凭据，跟着 .run 一起没了就得重新粘贴 token / 重新注册。
-# 可用 WIST_CENTER_CONFIG 指向别处。
-CENTER_CONFIG="${WIST_CENTER_CONFIG:-${HOME}/.wist-center/wist-center.toml}"
+# 中心配置文件（形状见 wist-center/wist-center.toml）。
+# 落**栈内** `<栈>/dev/configs/center/`（不再用 `~/.wist-center/`）—— 刻意不放在 .run/ 下：
+# .run 是可随手清掉的运行目录，而 dev/configs 在 sys-prj.yml 的 ignore/protect 里（受保护、不入库）。
+# 可用 WIST_CENTER_CONFIG 指向别处。凭据（admin token / hmac secret）已迁到下面的密钥文件，
+# 本文件里只留 `${SEC_*}` 占位。
+CENTER_CONFIG="${WIST_CENTER_CONFIG:-${STACK_ROOT}/dev/configs/center/wist-center.toml}"
 
-# 中心服务端 TLS（**默认开**）：用自签 CA-S + 服务器证书起 HTTPS，并让网关用同一 CA-S 当信任锚
-# （dev 自签：锚 = CA-S，服务器叶证书由它签）。关掉（起明文 HTTP）：`WIST_CENTER_TLS=0`。
-# 证书落 ~/.wist-center/tls/（与长期凭据同处，不入 .run）。
+# 中心凭据的密钥文件（与发布态同一机制）：配置里写 `${SEC_CENTER_*}`，值放这里；
+# 启动时用 WIST_CENTER_SEC_FILE 指过去解析。落栈根 .wist/（与 compose 只读挂载同一目录）。
+CENTER_SEC_FILE="${WIST_CENTER_SEC_FILE:-${STACK_ROOT}/.wist/sec-value.yml}"
+
+# 中心服务端 TLS（**默认开**）：用**共享站点 CA**（发布态 `identity/center/`，dev 与发布态同一把）签的
+# **本地叶证书**起 HTTPS；网关用同一把 CA 当信任锚 —— 即 dev 与发布态**共用 `identity/center/`**（同一站、
+# 同一信任根）。CA 不在 dev 生成（它是站点身份，由发布态建）；dev 只签自己的叶。关掉：`WIST_CENTER_TLS=0`。
 CENTER_TLS="${WIST_CENTER_TLS:-1}"
-CENTER_TLS_DIR="${WIST_CENTER_TLS_DIR:-${HOME}/.wist-center/tls}"
-CENTER_TLS_CA_CERT="${CENTER_TLS_DIR}/ca.crt.pem"
-CENTER_TLS_CA_KEY="${CENTER_TLS_DIR}/ca.key.pem"
+# 共享站点身份目录（与发布态同一份）：CA（信任根）+ CA-G 都在这里。
+CENTER_IDENTITY_DIR="${WIST_CENTER_IDENTITY_DIR:-${STACK_ROOT}/identity/center}"
+CENTER_TLS_CA_CERT="${CENTER_IDENTITY_DIR}/control-center.pem"
+CENTER_TLS_CA_KEY="${CENTER_IDENTITY_DIR}/control-center-ca.key"
+# dev 自己的叶证书（每态一份，**非**站点身份，故不落 identity）：落栈内 dev 目录。
+CENTER_TLS_DIR="${WIST_CENTER_TLS_DIR:-${STACK_ROOT}/dev/configs/center/tls}"
 CENTER_TLS_CERT="${CENTER_TLS_DIR}/server.crt.pem"
 CENTER_TLS_KEY="${CENTER_TLS_DIR}/server.key.pem"
+# 共享的网关客户端 CA（CA-G，与发布态同一把）—— 经 env 显式指给中心（dev 的配置目录不在 identity 下）。
+CENTER_GATEWAY_CLIENT_CA_CERT="${CENTER_IDENTITY_DIR}/gateway-client-ca.pem"
+CENTER_GATEWAY_CLIENT_CA_KEY="${CENTER_IDENTITY_DIR}/gateway-client-ca.key.pem"
+
+# 本机默认网卡 IP（非回环）。VM / 跨机访问中心时用它作对外地址。
+detect_lan_ip() {
+  local iface ip
+  iface="$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')"
+  if [[ -n "${iface}" ]]; then
+    ip="$(ipconfig getifaddr "${iface}" 2>/dev/null || true)"
+  fi
+  if [[ -z "${ip:-}" ]]; then
+    ip="$(ifconfig 2>/dev/null | awk '/inet /{ if ($2 != "127.0.0.1") { print $2; exit } }')"
+  fi
+  printf '%s' "${ip}"
+}
 
 # ── 端口 / 地址（覆盖用同名 env；PG_PORT、VM_PORT 与 docker-compose.yml 同名同值）──
-CENTER_ADDR="${WARP_INSIGHT_CENTER_LISTEN:-127.0.0.1:3100}"
+# 开发态默认**放开监听**（0.0.0.0）+ 对外用**域名**（hosts 解析）—— 让 VM / 跨机也能访问中心；
+# **不要用 127.0.0.1**（那只有本机能连）。域名需在 Mac 与 VM 的 /etc/hosts 指向中心主机，例如：
+#   127.0.0.1        center.dev.wist.lab     # Mac（本机回环）
+#   <Mac 的局域网IP>  center.dev.wist.lab     # VM（指向中心主机）
+CENTER_ADDR="${WARP_INSIGHT_CENTER_LISTEN:-0.0.0.0:3100}"
 CENTER_PORT="${CENTER_ADDR##*:}"
+# 对外域名（默认 center.dev.wist.lab）；置空则回落到本机网卡 IP。
+CENTER_PUBLIC_DOMAIN="${WARP_INSIGHT_CENTER_PUBLIC_DOMAIN:-center.dev.wist.lab}"
+# 对外地址（网关 / 虚拟机访问中心用的 host[:port]）。显式覆盖 > 域名 > 本机网卡 IP。
+# 对外主机名会自动追加进服务器证书 SAN（换值会重签叶证书，CA 不变）。
+CENTER_PUBLIC_HOST="${WARP_INSIGHT_CENTER_PUBLIC_HOST:-}"
+if [[ -z "${CENTER_PUBLIC_HOST}" ]]; then
+  if [[ -n "${CENTER_PUBLIC_DOMAIN}" ]]; then
+    CENTER_PUBLIC_HOST="${CENTER_PUBLIC_DOMAIN}:${CENTER_PORT}"
+  else
+    _center_lan_ip="$(detect_lan_ip)"
+    if [[ -n "${_center_lan_ip}" ]]; then
+      CENTER_PUBLIC_HOST="${_center_lan_ip}:${CENTER_PORT}"
+    else
+      CENTER_PUBLIC_HOST="127.0.0.1:${CENTER_PORT}"
+    fi
+  fi
+fi
 WEB_URL="${WEB_URL:-http://127.0.0.1:5173}"
 PG_PORT="${PG_PORT:-55432}"
 VM_PORT="${VM_PORT:-28429}"
@@ -64,6 +109,32 @@ require_cmd() {
 
 web_port() {
   python3 -c "from urllib.parse import urlparse; print(urlparse('${WEB_URL}').port or 80)"
+}
+
+# 本机可达的 loopback host（listen 为 0.0.0.0/:: 时换成 127.0.0.1，供前端代理用）。
+center_loopback_host() {
+  local h="${CENTER_ADDR%:*}"
+  [[ -z "${h}" || "${h}" == "0.0.0.0" || "${h}" == "::" ]] && h="127.0.0.1"
+  printf '%s' "${h}"
+}
+
+# 对外 host（去掉端口）。
+center_public_hostname() {
+  printf '%s' "${CENTER_PUBLIC_HOST%:*}"
+}
+
+# 服务器证书 SAN：恒含 localhost/127.0.0.1；再按对外主机追加（IP 走 IP:，其余走 DNS:）。
+center_san() {
+  local san="DNS:localhost,IP:127.0.0.1" pub
+  pub="$(center_public_hostname)"
+  if [[ -n "${pub}" && "${pub}" != "localhost" && "${pub}" != "127.0.0.1" ]]; then
+    if [[ "${pub}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+      san="${san},IP:${pub}"
+    else
+      san="${san},DNS:${pub}"
+    fi
+  fi
+  printf '%s' "${san}"
 }
 
 # TCP 探测：端口可连即 0。
@@ -235,57 +306,142 @@ build_center() {
 }
 
 # 首次运行用二进制自带的 init-config 生成中心配置（随机 admin token / hmac secret），
-# 之后复用同一份 → token 不再每次启动都变。需先 build_center。
+# 之后复用同一份 → token 不再每次启动都变；再把凭据迁到密钥文件（持久化）。需先 build_center。
 ensure_center_config() {
   if [[ -f "${CENTER_CONFIG}" ]]; then
     echo "中心配置：${CENTER_CONFIG}（复用已有凭据）"
-    return 0
+  else
+    echo "== 生成中心配置 =="
+    "${CENTER_CRATE}/target/debug/wist-center" init-config "${CENTER_CONFIG}"
   fi
-  echo "== 生成中心配置 =="
-  "${CENTER_CRATE}/target/debug/wist-center" init-config "${CENTER_CONFIG}"
+  # 凭据迁到密钥文件（`.wist/sec-value.yml`），配置里只留 ${SEC_*}。
+  ensure_center_secret "${CENTER_CONFIG}"
 }
 
-# 读中心配置里的 `admin_token = "..."`（提示用；只匹配单行，够我们自己生成的配置）。
-center_admin_token() {
-  python3 - "${CENTER_CONFIG}" <<'PY'
+# 读配置里 `key = "..."` 的字面值（只匹配单行，够我们自己生成的配置）。
+config_literal() {
+  python3 - "$1" "$2" <<'PY'
 import re, sys
 with open(sys.argv[1], encoding="utf-8") as handle:
     text = handle.read()
-match = re.search(r'^\s*admin_token\s*=\s*"(.*)"\s*$', text, re.M)
+match = re.search(rf'^\s*{re.escape(sys.argv[2])}\s*=\s*"(.*)"\s*$', text, re.M)
 print(match.group(1) if match else "")
 PY
 }
 
-# 确保开发态 TLS 材料存在：自签 **CA-S** + 由它签出的服务器叶证书（SAN 覆盖 127.0.0.1/localhost）。
-# 只在 WIST_CENTER_TLS 开启时用。**不能**用「自签证书既当信任锚又当叶」—— rustls 会拒（curl 未必），
-# 所以走「CA 签叶」这条与生产同形的路。
+# 中心凭据（admin_token / hmac_secret）的**密钥文件**化：值落 `<栈根>/.wist/sec-value.yml`
+# （键 center_admin_token / center_hmac_secret），配置里只留 `${SEC_CENTER_*}`；中心启动时用
+# `WIST_CENTER_SEC_FILE` 指过去解析（见 config.rs 的 secret_dict）。
+ensure_center_secret() {
+  local config="$1"
+  mkdir -p "$(dirname "${CENTER_SEC_FILE}")"
+
+  # 现有**字面**值（老配置 / init-config 生成的）优先迁入；否则随机。
+  local lit_admin lit_hmac
+  lit_admin="$(config_literal "${config}" admin_token)"
+  lit_hmac="$(config_literal "${config}" hmac_secret)"
+  [[ -f "${CENTER_SEC_FILE}" ]] || : >"${CENTER_SEC_FILE}"
+  python3 - "${CENTER_SEC_FILE}" "${lit_admin}" "${lit_hmac}" <<'PY'
+import re, secrets, sys
+path, lit_admin, lit_hmac = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as handle:
+    text = handle.read()
+
+def value_for(literal, nbytes):
+    # 已是占位符（如 ${SEC_CENTER_ADMIN_TOKEN}）不算值，重新生成。
+    return literal if literal and not literal.startswith("${") else secrets.token_hex(nbytes)
+
+for key, literal in (("center_admin_token", lit_admin), ("center_hmac_secret", lit_hmac)):
+    if re.search(rf"(?m)^\s*{key}\s*:", text):
+        print(f"  复用已有 {key}：{path}")
+        continue
+    if text and not text.endswith("\n"):
+        text += "\n"
+    text += f"{key}: {value_for(literal, 24)}\n"
+    print(f"  已在密钥文件写入 {key}：{path}")
+with open(path, "w") as handle:
+    handle.write(text)
+PY
+  chmod 600 "${CENTER_SEC_FILE}"
+
+  # 配置统一改写为 `${SEC_CENTER_*}`（无论原来是字面还是已占位）。
+  python3 - "${config}" <<'PY'
+import re, sys
+path = sys.argv[1]
+with open(path) as handle:
+    text = handle.read()
+
+def set_key(text, key, setting, section):
+    if re.search(rf"(?m)^\s*{key}\s*=", text):
+        return re.sub(rf"(?m)^\s*{key}\s*=.*$", setting, text, count=1)
+    text, n = re.subn(rf"(?m)^(\[{section}\]\s*)$", lambda m: m.group(1) + "\n" + setting, text, count=1)
+    if n != 1:
+        sys.exit(f"配置里找不到 [{section}] 段，无法写入 {key}")
+    return text
+
+text = set_key(text, "admin_token", 'admin_token = "${SEC_CENTER_ADMIN_TOKEN}"', "server")
+text = set_key(text, "hmac_secret", 'hmac_secret = "${SEC_CENTER_HMAC_SECRET}"', "security")
+with open(path, "w") as handle:
+    handle.write(text)
+print("  admin_token / hmac_secret 改写为 ${SEC_CENTER_*}（值在密钥文件）")
+PY
+}
+
+# 读中心 admin token（提示 / 注入 vite 代理用）：优先密钥文件（键 center_admin_token），
+# 回落配置里的值；但**占位符（含 `${`）不是可用 token**，这时返回空。
+center_admin_token() {
+  if [[ -f "${CENTER_SEC_FILE}" ]]; then
+    python3 - "${CENTER_SEC_FILE}" <<'PY'
+import re, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    text = handle.read()
+match = re.search(r'^\s*center_admin_token\s*:\s*(.*?)\s*$', text, re.M)
+print(match.group(1).strip().strip('"\'') if match else "")
+PY
+    return
+  fi
+  local fallback
+  fallback="$(config_literal "${CENTER_CONFIG}" admin_token)"
+  [[ "${fallback}" == *'${'* ]] && fallback=""
+  printf '%s' "${fallback}"
+}
+
+# 确保开发态 TLS 材料存在：用**共享站点 CA**（`identity/center/control-center.pem`，与发布态同一把）
+# 签一张**本地叶证书**（SAN 覆盖 localhost/127.0.0.1 与对外主机 CENTER_PUBLIC_HOST）。只在 TLS 开启时用。
+# **不能**用「自签证书既当信任锚又当叶」—— rustls 会拒（curl 未必），所以走「CA 签叶」这条路。
+# CA **不在 dev 生成**（它是站点身份，发布态 `scripts/gen-center-ca.sh` 建的）—— 缺就报错并给出处置。
+# 对外主机/域名变了（SAN 记录不一致）→ 只重签本地叶证书，CA 不动（已分发的信任根仍有效）。
 ensure_center_tls() {
   center_tls_enabled || return 0
-  if [[ -f "${CENTER_TLS_CERT}" && -f "${CENTER_TLS_KEY}" && -f "${CENTER_TLS_CA_CERT}" ]]; then
-    echo "中心 TLS 材料：${CENTER_TLS_DIR}（复用）"
+  local san
+  san="$(center_san)"
+  if [[ -f "${CENTER_TLS_CERT}" && -f "${CENTER_TLS_KEY}" \
+        && -f "${CENTER_TLS_DIR}/server.san" && "$(cat "${CENTER_TLS_DIR}/server.san")" == "${san}" ]]; then
+    echo "中心 TLS 材料：本地叶 ${CENTER_TLS_CERT}（复用，SAN=${san}；CA=${CENTER_TLS_CA_CERT}）"
     return 0
   fi
   require_cmd openssl
-  echo "== 生成中心 TLS 材料（dev：自签 CA-S + 服务器证书）=="
+  if [[ ! -f "${CENTER_TLS_CA_CERT}" || ! -f "${CENTER_TLS_CA_KEY}" ]]; then
+    echo "缺共享站点 CA：${CENTER_TLS_CA_CERT} / ${CENTER_TLS_CA_KEY}" >&2
+    echo "  先让发布态建它（在栈根跑 \`gops sys localize\`，或 \`scripts/gen-center-ca.sh ${CENTER_IDENTITY_DIR} <对外域名>\`）；" >&2
+    echo "  只想本地明文跑就设 WIST_CENTER_TLS=0。" >&2
+    exit 1
+  fi
   mkdir -p "${CENTER_TLS_DIR}"
-  # CA-S：自签根，可当信任锚。
-  openssl req -x509 -newkey rsa:2048 -nodes \
-    -keyout "${CENTER_TLS_CA_KEY}" -out "${CENTER_TLS_CA_CERT}" \
-    -days 825 -subj "/CN=wist-center-dev-ca" \
-    -addext "basicConstraints=critical,CA:TRUE" \
-    -addext "keyUsage=critical,keyCertSign,cRLSign" >/dev/null 2>&1
-  # 服务器叶证书（CA-S 签）。
+  # 本地叶证书：用**共享 CA** 签（CA 不重生成）；序列号落 dev 本地（不碰 identity/center/）。
   openssl req -newkey rsa:2048 -nodes \
     -keyout "${CENTER_TLS_KEY}" -out "${CENTER_TLS_DIR}/server.csr.pem" \
     -subj "/CN=wist-center-dev" >/dev/null 2>&1
-  printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n' \
+  printf 'subjectAltName=%s\nextendedKeyUsage=serverAuth\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n' "${san}" \
     >"${CENTER_TLS_DIR}/server.ext"
   openssl x509 -req -in "${CENTER_TLS_DIR}/server.csr.pem" \
-    -CA "${CENTER_TLS_CA_CERT}" -CAkey "${CENTER_TLS_CA_KEY}" -CAcreateserial \
+    -CA "${CENTER_TLS_CA_CERT}" -CAkey "${CENTER_TLS_CA_KEY}" \
+    -CAserial "${CENTER_TLS_DIR}/control-center.srl" -CAcreateserial \
     -out "${CENTER_TLS_CERT}" -days 825 -extfile "${CENTER_TLS_DIR}/server.ext" >/dev/null 2>&1
-  chmod 600 "${CENTER_TLS_CA_KEY}" "${CENTER_TLS_KEY}"
-  echo "  信任根（CA-S）：${CENTER_TLS_CA_CERT}"
-  echo "  服务器证书：${CENTER_TLS_CERT}"
+  chmod 600 "${CENTER_TLS_KEY}"
+  printf '%s' "${san}" >"${CENTER_TLS_DIR}/server.san"
+  echo "  共享站点 CA（锚）：${CENTER_TLS_CA_CERT}"
+  echo "  本地叶证书：${CENTER_TLS_CERT}（SAN=${san}）"
 }
 
 # 启动中心后端（后台）；需先 resolve_dependencies + build_center + ensure_center_config。
@@ -302,14 +458,18 @@ start_center() {
     tls_cert="${CENTER_TLS_CERT}"
     tls_key="${CENTER_TLS_KEY}"
     # 信任根（CA-S）分发给网关：既作中心的信任锚，也作 gateway 的 trust_bundle。
-    public_url="https://${CENTER_ADDR}"
+    public_url="https://${CENTER_PUBLIC_HOST}"
     ca_cert="${CENTER_TLS_CA_CERT}"
   fi
 
   echo "== 启动 wist-center（${CENTER_SCHEME}://${CENTER_ADDR}）=="
-  # 配置文件提供凭据与默认值；env 覆盖运行态：监听地址、存储/制品目录、依赖地址、TLS。
+  # 配置文件提供默认值；env 覆盖运行态：监听地址、存储/制品目录、依赖地址、TLS；
+  # 凭据（${SEC_CENTER_*}）由 WIST_CENTER_SEC_FILE 指向的密钥文件解析。
   env \
     WIST_CENTER_CONFIG="${CENTER_CONFIG}" \
+    WIST_CENTER_SEC_FILE="${CENTER_SEC_FILE}" \
+    WARP_INSIGHT_CENTER_GATEWAY_CLIENT_CA_CERT_PATH="${CENTER_GATEWAY_CLIENT_CA_CERT}" \
+    WARP_INSIGHT_CENTER_GATEWAY_CLIENT_CA_KEY_PATH="${CENTER_GATEWAY_CLIENT_CA_KEY}" \
     WARP_INSIGHT_CENTER_LISTEN="${CENTER_ADDR}" \
     WARP_INSIGHT_CENTER_STORE_PATH="${RUN_DIR}/store.json" \
     WARP_INSIGHT_CENTER_ARTIFACT_DIR="${ARTIFACT_DIR}" \
@@ -349,7 +509,14 @@ start_web() {
   echo "== 启动 wist-center-web（${WEB_URL}）=="
   (
     cd "${WEB_DIR}"
-    export WARP_INSIGHT_WEB_PROXY_TARGET="${CENTER_SCHEME}://${CENTER_ADDR}"
+    export WARP_INSIGHT_WEB_PROXY_TARGET="${CENTER_SCHEME}://$(center_loopback_host):${CENTER_PORT}"
+    # 中心 admin token 的**已解析**值（密钥文件里那份）：交给 vite 代理补 Authorization，
+    # 免得它去读配置里剩下的 `${SEC_CENTER_ADMIN_TOKEN}` 占位符、把占位符当 token 发出去。
+    # 若拿不到真值（回落到占位符/空）→ 不注入，让页面手填。
+    local dev_token
+    dev_token="$(center_admin_token)"
+    [[ "${dev_token}" == *'${'* ]] && dev_token=""
+    export WIST_CENTER_DEV_ADMIN_TOKEN="${dev_token}"
     exec nohup npm run dev -- --host "${host}" --port "${WEB_PORT}" --strictPort >"${WEB_LOG}" 2>&1
   ) &
   local web_pid=$!
@@ -380,15 +547,11 @@ print_access_info() {
 
   if [[ "${do_center}" == "1" ]] && port_open "${CENTER_PORT}"; then
     if center_tls_enabled; then scheme="https"; else scheme="http"; fi
-    echo "  中心 API：${scheme}://${CENTER_ADDR}"
-    if [[ -n "${WARP_INSIGHT_CENTER_ADMIN_TOKEN:-}" ]]; then
-      echo "  管理 token：来自环境变量 WARP_INSIGHT_CENTER_ADMIN_TOKEN（覆盖配置文件里的值）"
-    else
-      token="$(center_admin_token)"
-      [[ -n "${token}" ]] && echo "  管理 token：${token}（来自 ${CENTER_CONFIG}，长期有效）"
-    fi
+    echo "  中心 API：${scheme}://${CENTER_PUBLIC_HOST}（监听 ${CENTER_ADDR}）"
+    token="$(center_admin_token)"
+    [[ -n "${token}" ]] && echo "  管理 token：${token}（来自 ${CENTER_SEC_FILE}，长期有效）"
     echo "    （在管理页面填入该 token 后开启 5s 轮询刷新）"
-    echo "    换一套凭据：删掉 ${CENTER_CONFIG} 后重跑本脚本（旧 token 立即失效）"
+    echo "    换一套凭据：删掉 ${CENTER_SEC_FILE} 后重跑本脚本（旧 token 立即失效）"
     echo "  中心日志：${CENTER_LOG}"
   fi
 

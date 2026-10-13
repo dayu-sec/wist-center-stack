@@ -3,14 +3,20 @@
 # dst: configs/web/nginx.conf（sys/docker-compose.yml 把它挂到 /etc/nginx/conf.d/default.conf）
 # 渲染值：configs/web/nginx.value.json（scripts/init-web-conf.sh 从环境变量 CENTER_DOMAIN 生成）
 #
-# 职责：托管前端静态产物 + SPA 深链回退 + 把 /api 反代到 center 容器。
-# 本页 nginx 在容器内 **80** 上跑**明文** HTTP —— 中心自身不做 TLS，对外 HTTPS 由前面的反代终止；
-# 反代只要把请求转到本页的 ${WEB_PORT}，并由它自己持有页面证书（本栈不管 TLS 证书）。
-# 与开发态 vite 代理对齐：/api 前缀保留、原样透传，目标 = 中心容器 3100。
+# 职责：**终止 TLS** + 托管前端静态产物 + SPA 深链回退 + 把 /api 反代到 center 容器。
+# 本页 nginx 在容器内 **443** 上跑 **HTTPS**：服务器证书/私钥只读挂载自站点身份
+# `identity/center/control-center-server.{crt,key}`（由站点 CA 签，SAN 覆盖对外域名；见 scripts/init-center.sh），
+# 宿主发布到 ${WEB_PORT}（默认 18080）。/api 反代到 center 容器 3100（容器网络内**明文**，中心自身不做 TLS）。
+# 与开发态 vite 代理对齐：/api 前缀保留、原样透传。
 
 server {
-    listen 80;
+    listen 443 ssl;
     server_name {{web_domain}};
+
+    # 站点服务器证书（由站点 CA 签；SAN 覆盖对外域名）。由 compose 只读挂载进 /certs。
+    ssl_certificate     /certs/server.crt;
+    ssl_certificate_key /certs/server.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
 
     root /usr/share/nginx/html;
     index index.html;

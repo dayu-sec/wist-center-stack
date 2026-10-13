@@ -4,34 +4,68 @@ test_envs:
 
 # `gops sys package` 打包时排除的路径（glob，相对系统根；默认模式与 `--full` **都生效**）。
 #
-# 为什么必须有这条：`configs/` 里是**现场生成的身份与运行材料** —— 控制中心 CA 私钥、
-# 服务器私钥、渲染出的 `wist-center.toml`（含 admin token / hmac secret）、JSON store 与
-# 制品镜像。不加这条，一次 `gops sys package --full` 就会把整套密钥塞进交付包。
-# 默认模式本来就只收 git 入库文件，这里是护栏。
+# 资源树（`configs/`、`artifacts/`、`.wist/`）里是**可重建 / 每部署一份**的东西：渲染出的
+# `wist-center.toml`、JSON store、制品镜像、密钥文件。它们随包走没有意义，密钥更是**绝不能**进包。
+#
+# **站点身份**（CA / 服务器证书 / 私钥）**不在资源树里** —— 它是**站点级、dev/prod 共用**的唯一一份，
+# 放栈根 `identity/`，并整体作为**对外契约**声明（见下面 `contract:`）。身份是「证书 + 私钥」一对，
+# 拆开就不自足（丢私钥 = 签不出新叶 / 客户端证书 = 换锚），所以**整目录进 contract**。
 ignore:
   - configs
   - artifacts
+  # 栈根现场密钥目录（`WIST_CENTER_SEC_FILE` 默认指向 `.wist/sec-value.yml`：center admin token /
+  # hmac secret）。与 `configs` 同一个理由 —— 密钥绝不进交付包；默认模式靠 `.gitignore` 挡住，
+  # 这条是 **`--full` 模式的护栏**（WalkDir 不读 `.gitignore`）。
+  - .wist
 
 # 现场态：升级/重建时**不覆盖、也不删**的路径（glob，相对系统根）。
 #
-# 不变式 `ignore ⊆ preserve`：不进交付包的按定义就不是包内容，升级当然也不该碰它。
-preserve:
+# 不变式 `ignore ⊆ protect`：不进交付包的按定义就不是包内容，升级当然也不该碰它。
+# （gops 2.3 起键名为 `protect`；旧名 `preserve` 仍可读，这里统一用新名。）
+# `contract:`（下方）声明即**自动纳入保护**，不必在这里再写一遍。
+protect:
   - .env
   - configs
   - artifacts
+  # 跟 `ignore` 保持一致（不变式 `ignore ⊆ protect`）。
+  - .wist
 
-# 备份选取分级（只表达“丢了什么代价”，**不触发任何删除**）。
-#   restore 档：丢了要重装 / 换身份 → `gops prj backup` 默认收，`gops prj restore` 放回。
-# 中心真正**不可再生**的是身份材料：控制中心 CA（公章，已分发的信任根靠它，轮换要一个个网关重发）
-# 与渲染进 config 的 admin token / hmac secret。
+# 对外契约：**不可重建的公开现场事实** —— 本栈把它定为**整个站点身份**（自足）。
+#
+# `identity/center/`（dev/prod 共用）里：
+#   control-center.pem           # CA 证书 = 分发给所有网关的信任根（换它 = 换公章，已分发的全部失效，
+#                                #   每个网关都要重发）
+#   control-center-ca.key        # CA 私钥（**务必备份**）
+#   control-center-server.crt    # 中心 TLS 服务器证书（由 CA 签；给前面的反代用，中心容器自身不做 TLS）
+#   control-center-server.key    # 中心服务器私钥
+#   control-center.srl           # CA 序列号（宿主 openssl 续签要写）
+#
+# **为什么含私钥**：身份是「证书 + 私钥」一对，只留公开半不自足 —— 丢了 CA 私钥就签不出新的
+# 服务器 / 客户端证书（= 换锚、所有网关重发信任根），契约等于冻结 / 作废。故整目录进 contract，
+# 让 `contract export` 出来的归档即可**独立复原站点身份**。
+#
+# 语义**自足**：命中即 **不覆盖（protect）+ 必收（backup）+ 不进包**，不必再写进上面三节。
+# ⚠ 因为含私钥，`gops prj contract export` 的归档是**密件**：落点（`ops-prj.yml: contract.target`）
+#   要放在**安全 / 离机**处，与整站备份同等级别对待。
+# ⚠ 已知（gops 2.3.0）：`sys package` **尚未把 `contract` 计入排除**，故 `--full` 下 `identity/` 仍可能进包；
+#   发布走 `.github` 的 `git archive` + `.gitignore`（含 `/identity/`），不受影响 —— 待 gops 修复后再靠 `--full`。
+contract:
+  - identity
+
+# 备份选取（**扁平列表**：只表达“丢了什么代价”，**不触发任何删除**）。
+# 列进来的都是站点**不可再生 / 需原样回放**的材料：`configs/`（渲染出的 `wist-center.toml`、
+# JSON store、logs —— 丢了网关凭客户端证书重连重建）与密钥文件 `.wist/sec-value.yml`
+# （admin token / hmac secret）。注意：`wist-center.toml` 里只有 `${SEC_CENTER_*}` **占位**
+# （真值不落盘），所以归档**必须**带上 `.wist`，否则还原后重新生成会换掉 token / hmac
+# （已注册网关的派生凭据全失效）。
 #   注意：PostgreSQL 数据卷（pg 里的 store）与 VictoriaMetrics 时序**不在文件备份范围内** ——
 #   库丢了，网关凭现存的客户端证书会重连重建；时序本就是历史。要备库得单独 `pg_dump`。
-# 制品镜像（`artifacts/`，版本发布下载/镜像下来的安装包）走 **rebuild** 档：它们是从来源地址
-# （release 记录里的 origin）镜像来的，丢了可重新录入；要纳入默认备份就把它挪到 restore 档。
+# 制品镜像（`artifacts/`）是**可重建**的（从 release 来源地址镜像来的，丢了可重新录入）—— 故**不进本表**。
+#
+# gops 2.3 起 `backup:` 是**扁平列表**（旧的分档 `{restore, rebuild}` 形式已取消）：
+# 列进来的都会被 `gops prj backup` 收走。站点身份（`identity/`）已由上面的 `contract`
+# **自动纳入备份**（取 `backup ∪ contract`），这里**不要**再列一遍 —— 同一路径写两处会触发
+# `contract.overlap`（诊断当声明错误报出）。
 backup:
-  restore:
-    - configs/center/ca
-    - configs/center/wist-center.toml
-    - configs/center/state/*.json
-  rebuild:
-    - artifacts
+  - configs
+  - .wist

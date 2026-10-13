@@ -9,8 +9,9 @@
 #
 # 说明：
 #   - 只有 `system:` 段的变量会进入 resolved_vars.yml 并最终导出到 .env；
-#   - 密钥不要写在这里：compose 里用 ${SEC_xxx} 占位，运行时由 `gops run start`
-#     从 ~/.galaxy/sec_value.yml 注入，不落盘（本栈的密钥见下面 CENTER 段注释）；
+#   - 密钥不要写在这里：本栈凭据（admin token / hmac secret）落栈根 `.wist/sec-value.yml`，
+#     由 `scripts/init-center.sh` 生成、compose 只读挂进 center 容器，配置里只留 `${SEC_xxx}` 占位；
+#     其它密钥如需，仍可用 `${SEC_xxx}` 占位、由 `gops run start` 注入、不落盘。
 #   - 容器内端口/路径/服务名是应用契约，直接写在 sys/docker-compose.yml 里。
 system:
   # 镜像源前缀：国内走腾讯云 TCR，境外改成 ghcr.io/dayu-sec
@@ -18,12 +19,12 @@ system:
     value: ghcr.io/dayu-sec
 
   # 镜像 tag：中心后端与前端各自独立发版，tag 分开；需要钉版本时改这里。
-  #   CENTER_TAG 对应 wist-center 的 release tag（v0.5.0-alpha）
-  #   WEB_TAG    对应 wist-center-web 的 release tag（v0.1.5-alpha）
+  #   CENTER_TAG 对应 wist-center 的 release tag（v0.12.0-alpha）
+  #   WEB_TAG    对应 wist-center-web 的 release tag（v0.4.0-alpha）
   - name: CENTER_TAG
-    value: v0.5.0-alpha
+    value: v0.12.0-alpha
   - name: WEB_TAG
-    value: v0.1.5-alpha
+    value: v0.4.0-alpha
   # 观测镜像：直接用上游官方 victoriametrics/victoria-metrics（compose 里 image 就是它）
   - name: VM_TAG
     value: v1.153.0
@@ -31,7 +32,7 @@ system:
   # 中心生成「网关安装命令」时用的网关镜像（写进渲染出的 wist-center.toml 的 [artifacts] gateway_image）。
   # 现场按实际网关栈镜像覆盖；默认值与 wist-gateway-stack 当前钉的版本对齐。
   - name: GATEWAY_IMAGE
-    value: ghcr.io/dayu-sec/wist-gateway:v0.1.19-alpha
+    value: ghcr.io/dayu-sec/wist-gateway:v0.9.0-alpha
   # 中心存储：PostgreSQL（PgStore）。库结构由 sys/db/initdb/01_schema.sql 在**首次**初始化数据卷时建立。
   - name: PG_TAG
     value: '16'
@@ -74,7 +75,9 @@ system:
     value: http://victoria-metrics:8428
 
   # 挂载源路径（按部署环境摆放）
-  # 中心配置与密钥目录（渲染出 wist-center.toml + CA），容器挂到 /wist-center
+  # 中心配置目录（渲染出 wist-center.toml），容器挂到 /wist-center。
+  # 站点身份（CA / 服务器证书 / 私钥）**不在**这里：它在栈根 `identity/center/`（compose 里
+  # 以字面量 `./identity/center` 挂到容器 /wist-center/ca），dev/prod 共用、整体作对外契约。
   - name: CENTER_CONFIG_DIR
     value: ./configs/center
   # 制品镜像目录：版本发布时下载/镜像下来的安装包落这里。
