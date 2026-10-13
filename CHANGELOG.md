@@ -3,6 +3,13 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.1.3-alpha] - 2026-10-13
+
+### 变更
+
+- **内部依赖包跟进：`GATEWAY_IMAGE` → `ghcr.io/dayu-sec/wist-gateway:v0.9.1-alpha`**
+  （生成网关安装命令时写进中心 `[artifacts] gateway_image` 的镜像）。
+
 ## [0.1.2-alpha] - 2026-10-13
 
 ### Changed

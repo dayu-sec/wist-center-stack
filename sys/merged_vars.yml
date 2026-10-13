@@ -8,7 +8,7 @@ system:
 - name: VM_TAG
   value: v1.153.0
 - name: GATEWAY_IMAGE
-  value: ghcr.io/dayu-sec/wist-gateway:v0.9.0-alpha
+  value: ghcr.io/dayu-sec/wist-gateway:v0.9.1-alpha
 - name: PG_TAG
   value: '16'
 - name: CENTER_PORT
