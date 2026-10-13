@@ -3,6 +3,14 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.1.4-alpha] - 2026-10-13
+
+### 变更
+
+- **发布时可选把制品推送到腾讯云 COS**：打 tag 时新增 `upload-cos` job，把
+  `wist-center-stack-<tag>.tar.gz` 上传到 `cos://<桶>/wist-center-stack/<tag>/` 与
+  `.../latest/`（未配置 `COS_BUCKET` 时自动跳过，不影响发布）。
+
 ## [0.1.3-alpha] - 2026-10-13
 
 ### 变更
