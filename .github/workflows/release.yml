@@ -72,6 +72,7 @@ jobs:
   # 上传的对象键：
   #   <COS_PREFIX>/<tag>/wist-center-stack-<tag>.tar.gz   （按版本钉住，不可变）
   #   <COS_PREFIX>/latest/wist-center-stack-<tag>.tar.gz  （便于“取最新”，文件名仍带版本）
+  # 每个对象带自定义元数据 x-cos-meta-artifact-sha256=<hex>（COS 只存 MD5 ETag，sha256 得自带）
   upload-cos:
     name: Upload bundle to Tencent COS
     needs: [release]
@@ -136,6 +137,13 @@ jobs:
           prefix="${prefix%/}"
           file="artifacts/wist-center-stack-${TAG}.tar.gz"
           test -f "${file}"
+          # COS 对象只存 MD5（ETag），sha256 得自带：算一份作为对象自定义元数据
+          # （x-cos-meta-artifact-sha256 —— 与设计里的 artifact_sha256 字段同名），随对象走、
+          # 可用 `coscli stat`（HEAD）读回。--meta 形如 key:value。
+          # 本 step 只有 `set -eu`（无 pipefail），管道失败会被 cut 吃掉；空摘要等于又「丢」了，故兜一道。
+          sha="$(sha256sum "${file}" | cut -d' ' -f1)"
+          [ -n "${sha}" ] || { echo "::error::无法计算 ${file} 的 sha256" >&2; exit 1; }
+          meta="x-cos-meta-artifact-sha256:${sha}"
           cfg="$HOME/.cos.yaml"
           out="$PWD/coscli_output"
           rm -rf "${out}"
@@ -154,10 +162,11 @@ jobs:
             exit 1
           }
 
-          coscli cp "${file}" "cos://${COS_BUCKET}/${prefix}/${TAG}/wist-center-stack-${TAG}.tar.gz" -c "${cfg}" \
+          coscli cp "${file}" "cos://${COS_BUCKET}/${prefix}/${TAG}/wist-center-stack-${TAG}.tar.gz" -c "${cfg}" --meta "${meta}" \
             || dump_err "COS 上传失败（版本键）"
-          coscli cp "${file}" "cos://${COS_BUCKET}/${prefix}/latest/wist-center-stack-${TAG}.tar.gz" -c "${cfg}" \
+          coscli cp "${file}" "cos://${COS_BUCKET}/${prefix}/latest/wist-center-stack-${TAG}.tar.gz" -c "${cfg}" --meta "${meta}" \
             || dump_err "COS 上传失败（latest 键）"
+          echo "已上传 wist-center-stack-${TAG}.tar.gz  sha256=${sha}"
           echo "COS 上传完成。"
           # 列表仅用于验证展示；若密钥没有 cos:GetBucket 权限，不应让整个发布失败。
           coscli ls "cos://${COS_BUCKET}/${prefix}/" -c "${cfg}" \
