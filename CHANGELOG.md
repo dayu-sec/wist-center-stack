@@ -3,6 +3,14 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.1.8-alpha] - 2026-10-14
+
+### 变更
+
+- **制品推送到 COS 时自带 sha256**：上传的对象带自定义元数据 `x-cos-meta-artifact-sha256`
+  （COS 只存 MD5 ETag，GitHub 资产摘要过不来）；可用 `coscli stat`（HEAD）读回。`x-cos-meta-`
+  是 COS 对自定义元数据的强制前缀。
+
 ## [0.1.7-alpha] - 2026-10-14
 
 ### 修复
