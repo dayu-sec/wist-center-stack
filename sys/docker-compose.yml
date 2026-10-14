@@ -34,7 +34,7 @@ services:
   # 说明：库结构与 `wist-center/docker/initdb/01_schema.sql` 同源，改中心 schema 时两处要同步。
   postgres:
     container_name: wist-center-stack-postgres
-    image: postgres:${PG_TAG}
+    image: ${PG_SPC}/postgres:${PG_TAG}
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${PG_USER}
@@ -60,7 +60,7 @@ services:
   # `center` 依赖它 `service_completed_successfully`：schema 应用失败就不让中心带旧表结构起来。
   db-schema:
     container_name: wist-center-stack-db-schema
-    image: postgres:${PG_TAG}
+    image: ${PG_SPC}/postgres:${PG_TAG}
     restart: "no"
     depends_on:
       postgres:
@@ -83,7 +83,7 @@ services:
   # ── 观测：指标/历史时序 ──
   victoria-metrics:
     container_name: wist-center-stack-vm
-    image: victoriametrics/victoria-metrics:${VM_TAG}
+    image: ${VM_SPC}/victoria-metrics:${VM_TAG}
     restart: unless-stopped
     ports:
       - "${VM_PORT}:8428"
@@ -122,7 +122,7 @@ services:
   # 运行身份 999:999（镜像里 `useradd -r wist`），宿主侧由 scripts/align-host-perms.sh 对齐。
   center:
     container_name: wist-center-stack-center
-    image: ${IMAGE_SPC}/wist-center:${CENTER_TAG}
+    image: ${WIST_SPC}/wist-center:${CENTER_TAG}
     user: "999:999"
     restart: unless-stopped
     environment:
@@ -168,7 +168,7 @@ services:
   # `/api` 反代到 center 容器 3100（容器网络内明文 —— 中心自身不做 TLS）。
   web:
     container_name: wist-center-stack-web
-    image: ${IMAGE_SPC}/wist-center-web:${WEB_TAG}
+    image: ${WIST_SPC}/wist-center-web:${WEB_TAG}
     restart: unless-stopped
     volumes:
       - ${WEB_NGINX_CONF}:/etc/nginx/conf.d/default.conf:ro

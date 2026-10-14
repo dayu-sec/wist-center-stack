@@ -4,10 +4,12 @@
 #
 # 为什么需要它：
 #   center 容器**固定以 uid:gid 999:999 运行**（镜像里 `useradd -r wist`，compose 里也显式钉死）。
-#   bind 挂载在 Linux 上**不改变属主**（宿主是谁，容器里就是谁），于是两种稳定故障：
+#   bind 挂载在 Linux 上**不改变属主**（宿主是谁，容器里就是谁），于是三类稳定故障：
 #     · configs/center/state 属主是 root/部署账号且 755 → 容器写不出 JSON store / 制品镜像
 #       （Permission denied）→ center 启动报存储不可写；
-#     · identity/center/*.key 是 600 且属主不是 999 → 容器读不到 CA 私钥、不提供信任根。
+#     · identity/center/*.key 是 600 且属主不是 999 → 容器读不到 CA 私钥、不提供信任根；
+#     · `.wist/sec-value.yml` 是 600 且属主不是 999 → 容器读不到密钥文件，`${SEC_CENTER_*}`
+#       （admin token / hmac secret）解析不出来 → 中心拒启。
 #   更麻烦的是：Docker 在 `up` 时会**自行**把缺失的 bind 源目录建成 root:root 755 ——
 #   所以「属主取决于谁先创建」，只能在 `up` **之前**显式对齐。
 #
@@ -55,6 +57,8 @@ OWNER_GID="${SUDO_GID:-$(id -g)}"
 #   identity/*：站点身份（dev/prod 共用，容器只读挂载）—— 目录含私钥故 2750（组可读可进入）；
 #     容器只需读其中的 CA 证书（ca_cert_path）；setgid 让宿主 openssl 补签的新证书自动归容器组。
 #   artifacts：制品镜像目录（容器要读写；与 configs/ 分开）。
+#   .wist/：栈根密钥目录（容器只读挂载到 /secrets；中心用 WIST_CENTER_SEC_FILE 读里面的
+#     sec-value.yml 解析 ${SEC_CENTER_*}）—— 容器只读，2755（setgid 让 init 新生成的密钥文件自动归容器组）。
 #   需要容器写的目录 2770（组可写 + setgid）；容器只读的 2755 / 2750。
 TARGET_DIRS=(
   "artifacts:2770"
@@ -64,6 +68,7 @@ TARGET_DIRS=(
   "configs/web:2755"
   "identity:2755"
   "identity/center:2750"
+  ".wist:2755"
 )
 # 目标文件（**存在才处理**，不新建）：
 #   私钥 / CA 序列号 / 含占位符的配置 —— 容器要读，且含密钥，故 640（不是 644）：
@@ -72,10 +77,12 @@ TARGET_DIRS=(
 #   公开证书 / 站点事实 —— 公开信息，644：
 #     identity/center/*.pem（CA 证书）、identity/center/*.crt（服务器证书）、
 #     identity/center/*-pub.toml（现场态声明）、identity/center/.env（现场态值）。
+#   栈根密钥文件（.wist/sec-value.yml：admin token / hmac secret，中心从它解析 ${SEC_CENTER_*}）—— 含密钥，640。
 TARGET_FILES_SECRET=(
   identity/center/*.key
   identity/center/*.srl
   configs/center/wist-center.toml
+  .wist/sec-value.yml
 )
 TARGET_FILES_PUBLIC=(
   identity/center/*.pem

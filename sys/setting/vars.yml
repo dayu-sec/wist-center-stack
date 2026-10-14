@@ -14,9 +14,18 @@
 #     其它密钥如需，仍可用 `${SEC_xxx}` 占位、由 `gops run start` 注入、不落盘。
 #   - 容器内端口/路径/服务名是应用契约，直接写在 sys/docker-compose.yml 里。
 system:
-  # 镜像源前缀：国内走腾讯云 TCR，境外改成 ghcr.io/dayu-sec
-  - name: IMAGE_SPC
+  # 镜像源前缀：各自独立，可分别指向不同 registry（内网 / 镜像源逐项覆盖）
+  #   WIST_SPC：中心后端 / 前端（wist-center / wist-center-web）
+  #   VM_SPC  ：VictoriaMetrics（观测）
+  #   PG_SPC  ：PostgreSQL（中心存储）
+  - name: WIST_SPC
     value: ghcr.io/dayu-sec
+
+  - name: VM_SPC
+    value: quay.io/victoriametrics
+
+  - name: PG_SPC
+    value: docker.io/library
 
   # 镜像 tag：中心后端与前端各自独立发版，tag 分开；需要钉版本时改这里。
   #   CENTER_TAG 对应 wist-center 的 release tag（v0.12.0-alpha）
@@ -25,7 +34,7 @@ system:
     value: v0.12.0-alpha
   - name: WEB_TAG
     value: v0.4.0-alpha
-  # 观测镜像：直接用上游官方 victoriametrics/victoria-metrics（compose 里 image 就是它）
+  # 观测镜像 tag（源前缀见 VM_SPC）
   - name: VM_TAG
     value: v1.153.0
 

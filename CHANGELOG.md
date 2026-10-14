@@ -3,6 +3,24 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.1.5-alpha] - 2026-10-14
+
+### 修复
+
+- **宿主权限对齐补上栈根密钥目录 `.wist/`**：`scripts/align-host-perms.sh` 过去只对齐 `configs/`、`identity/`，
+  漏了 `.wist/`；而 `.wist/sec-value.yml` 由 `scripts/init-center.sh` 以 `chmod 600` 生成、属主是部署账号，
+  center 容器（固定 `999:999`）读不到 `/secrets/sec-value.yml` → `${SEC_CENTER_ADMIN_TOKEN}` /
+  `${SEC_CENTER_HMAC_SECRET}` 解析不出来 → 中心拒启（容器无限重启）。现在 `.wist/`（2755）与
+  `.wist/sec-value.yml`（640）一并纳入 `gops sys localize` 的自动对齐，一步到位。
+
+### 变更
+
+- **镜像源前缀拆分，可各自指向不同 registry**：`IMAGE_SPC` → `WIST_SPC`（中心后端/前端）、
+  `VM_SPC`（VictoriaMetrics）、`PG_SPC`（PostgreSQL）；`sys/docker-compose.yml` 的 `image:` 与
+  README 服务表同步改到位，内网/客户环境可逐项覆盖镜像源。
+- **新增 `dev/push-images.sh`**：把 compose 里非 `wist*` 的上游镜像（VictoriaMetrics 等）同步到指定
+  registry / 命名空间（默认腾讯云 TCR），取镜像源以 `docker compose config --images` 为准。
+
 ## [0.1.4-alpha] - 2026-10-13
 
 ### 变更

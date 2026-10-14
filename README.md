@@ -17,11 +17,11 @@
 
 | 服务 | 作用 | 端口（宿主:容器） | 镜像来源 |
 |---|---|---|---|
-| `center` | 中心后端（HTTP API） | `${CENTER_PORT}:3100` | `dy-sec.tencentcloudcr.com/cloud/wist-center` |
-| `web` | 管理前端入口（nginx：**终止 TLS** + 静态 + `/api` 反代到 center） | `${WEB_PORT}:443`（**HTTPS**） | `dy-sec.tencentcloudcr.com/cloud/wist-center-web` |
-| `postgres` | 中心存储（PgStore） | `${PG_PORT}:5432` | `postgres:${PG_TAG}` |
-| `victoria-metrics` | 状态历史时序库 | `${VM_PORT}:8428` | `victoriametrics/victoria-metrics` |
-| `db-schema` | 一次性：每次 `start` 幂等套一遍 `sys/db/initdb/01_schema.sql` | 无 | `postgres:${PG_TAG}` |
+| `center` | 中心后端（HTTP API） | `${CENTER_PORT}:3100` | `${WIST_SPC}/wist-center:${CENTER_TAG}` |
+| `web` | 管理前端入口（nginx：**终止 TLS** + 静态 + `/api` 反代到 center） | `${WEB_PORT}:443`（**HTTPS**） | `${WIST_SPC}/wist-center-web:${WEB_TAG}` |
+| `postgres` | 中心存储（PgStore） | `${PG_PORT}:5432` | `${PG_SPC}/postgres:${PG_TAG}` |
+| `victoria-metrics` | 状态历史时序库 | `${VM_PORT}:8428` | `${VM_SPC}/victoria-metrics:${VM_TAG}` |
+| `db-schema` | 一次性：每次 `start` 幂等套一遍 `sys/db/initdb/01_schema.sql` | 无 | `${PG_SPC}/postgres:${PG_TAG}` |
 
 > `db-schema` 是**一次性任务**（exit 0 即完），`center` 依赖它 `service_completed_successfully`。
 > 存在原因：`docker-entrypoint-initdb.d` **只在空 data 卷首次初始化时**执行，之后 `01_schema.sql`

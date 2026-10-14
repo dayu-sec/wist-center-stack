@@ -1,6 +1,10 @@
 system:
-- name: IMAGE_SPC
+- name: WIST_SPC
   value: ghcr.io/dayu-sec
+- name: VM_SPC
+  value: quay.io/victoriametrics
+- name: PG_SPC
+  value: docker.io/library
 - name: CENTER_TAG
   value: v0.12.0-alpha
 - name: WEB_TAG
