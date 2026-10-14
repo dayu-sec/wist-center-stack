@@ -3,6 +3,19 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.1.7-alpha] - 2026-10-14
+
+### 修复
+
+- **`public_url` 少了端口 → 网关 link-upstream 指错口**。center 生成的 link-upstream / `init_url` /
+  `control_center_endpoint` 全部**原样取自 `public_url`、不补端口**（`wist-center` 侧代码）。而本栈 prod 的
+  `scripts/init-center-pub.sh` 把它拼成了 `https://<CENTER_DOMAIN>`（**无端口**）→ 网关拿到的是
+  `https://<域>/api/v1/gateway/link-upstream`，落到 **443**（web 前端），而非网关应**直连**的 **3100**
+  （443 那层 nginx 终止 TLS、不透传客户端证书 → mTLS 认不了人）。现在 `CENTER_PUBLIC_URL` 拼成
+  `https://<CENTER_DOMAIN>:<CENTER_PORT>`（端口为 443 时省略），与 dev 侧口径（`dev/lib.sh`）一致。
+  > 既有现场：`identity/center/.env` 里的值**非空一律保留**，需手工把 `CENTER_PUBLIC_URL` 改成带端口的
+  > 值（或删掉该键再 `gops sys localize`）。
+
 ## [0.1.6-alpha] - 2026-10-14
 
 ### 修复

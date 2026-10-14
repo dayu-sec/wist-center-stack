@@ -6,8 +6,8 @@
 # （`sys/configs/center/wist-center-pub.toml.tpl` → `identity/center/wist-center-pub.toml`），
 # 与其它交付物同一套渲染；重渲动不到现场（值不在这里）。
 #
-# 本脚本只做一件事：把 `CENTER_PUBLIC_URL`（= `https://<CENTER_DOMAIN>`）按缺
-# （**键不存在或值为空**）写进 `.env`，**非空一律保留**（现场改过 / 迁移搬来的）。
+# 本脚本只做一件事：把 `CENTER_PUBLIC_URL`（= `https://<CENTER_DOMAIN>:<CENTER_PORT>`，
+# 端口为 443 时省略）按缺（**键不存在或值为空**）写进 `.env`，**非空一律保留**（现场改过 / 迁移搬来的）。
 #
 # 为什么值与声明分开（docker-compose 口径）：声明里只出现 `${VAR}`，真值在 `.env` ——
 #   声明可随版本覆盖（重渲），`.env` 是现场唯一写者。中心加载时用「进程环境 > 同目录 `.env`」
@@ -19,7 +19,10 @@
 #   scripts/init-center-pub.sh [现场态目录]     # 默认 identity/center（可用 CENTER_IDENTITY_DIR 覆盖）
 #
 # 读合并后的系统变量（gops 以环境变量注入本子进程；见 sys/setting/vars.yml）：
-#   CENTER_DOMAIN   对外域名 → `CENTER_PUBLIC_URL = https://<域>`
+#   CENTER_DOMAIN   对外域名
+#   CENTER_PORT     中心后端**宿主**端口（默认 3100）→ `CENTER_PUBLIC_URL = https://<域>:<CENTER_PORT>`
+#   端口必须带上：网关按 public_url **直连**中心后端（mTLS；见 docker-compose「网关直连 3100」）；
+#   443 那个口是 web 前端（终止 TLS、不透传客户端证书）。端口为 443 时省略。
 #
 # 幂等：内容没变就不碰文件（不改 mtime）⇒ **可以每次 localize 都跑**。
 set -euo pipefail
@@ -31,11 +34,16 @@ command -v python3 >/dev/null 2>&1 || { echo "缺少 python3，无法生成现�
 mkdir -p "${DIR}"
 
 # 值：按缺补齐（键不存在或值为空才写；非空一律保留）。
-python3 - "${ENV_FILE}" "${CENTER_DOMAIN:-}" <<'PY'
+python3 - "${ENV_FILE}" "${CENTER_DOMAIN:-}" "${CENTER_PORT:-3100}" <<'PY'
 import os, sys, tempfile
 
-target, domain = sys.argv[1:3]
-url = f"https://{domain}" if domain else ""
+target, domain, port = sys.argv[1:4]
+if not domain:
+    url = ""
+elif not port or port == "443":
+    url = f"https://{domain}"
+else:
+    url = f"https://{domain}:{port}"
 
 HEADER = "\n".join(
     [
