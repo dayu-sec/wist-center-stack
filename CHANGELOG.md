@@ -3,6 +3,20 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.1.6-alpha] - 2026-10-14
+
+### 修复
+
+- **全新现场装不起来：补上「网关客户端 CA（CA-G）」的备料**。center 启动时若 `identity/center/` 里没有
+  `gateway-client-ca.{pem,key.pem}`，会**尝试现生成**并写 `/wist-center/ca/gateway-client-ca.tmp`，而该目录是
+  **只读挂载** → `failed to write …: Read-only file system` → center 无限重启（新装现场、以及从旧版本升上来
+  但没搬过 CA-G 的现场都会踩）。现在 `scripts/init-center.sh` 缺失时用 openssl 生成 CA-G（EC P-256、自签、
+  `basicConstraints=CA:TRUE`）落 `identity/center/`，随 `gops sys localize` 一步备齐；幂等，已存在即跳过
+  （换 CA-G = 已入网网关需重入网，非缺失不碰）。
+- **`scripts/align-host-perms.sh` 让 CA-G 私钥按 640 处理**：公开 glob `identity/center/*.pem` 也会命中
+  `gateway-client-ca.key.pem`，会把它改成 644（容器能读、但**私钥变全局可读**）。现在把 `identity/center/*.key.pem`
+  归入私钥组，并让**私钥优先**、不被公开项改回 644。
+
 ## [0.1.5-alpha] - 2026-10-14
 
 ### 修复

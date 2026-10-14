@@ -72,14 +72,18 @@ TARGET_DIRS=(
 )
 # 目标文件（**存在才处理**，不新建）：
 #   私钥 / CA 序列号 / 含占位符的配置 —— 容器要读，且含密钥，故 640（不是 644）：
-#     identity/center/*.key（CA 私钥 / 服务器私钥）、identity/center/*.srl（CA 序列号，宿主 openssl 续签要写）、
+#     identity/center/*.key（CA 私钥 / 服务器私钥）、identity/center/*.key.pem（网关客户端 CA 私钥）、
+#     identity/center/*.srl（CA 序列号，宿主 openssl 续签要写）、
 #     configs/center/wist-center.toml（含 `${SEC_*}` 占位）。
 #   公开证书 / 站点事实 —— 公开信息，644：
 #     identity/center/*.pem（CA 证书）、identity/center/*.crt（服务器证书）、
 #     identity/center/*-pub.toml（现场态声明）、identity/center/.env（现场态值）。
+#     ⚠ 公开 glob `*.pem` 也会命中 `*.key.pem`（密钥）—— 见下面 `_secret_seen`：**私钥优先**，
+#       不会被公开项改回 644。
 #   栈根密钥文件（.wist/sec-value.yml：admin token / hmac secret，中心从它解析 ${SEC_CENTER_*}）—— 含密钥，640。
 TARGET_FILES_SECRET=(
   identity/center/*.key
+  identity/center/*.key.pem
   identity/center/*.srl
   configs/center/wist-center.toml
   .wist/sec-value.yml
@@ -127,14 +131,19 @@ done
 
 files_todo=()
 files_todo_mode=()
+# 已按「私钥 640」处理的路径：`*.pem` 的公开 glob 也会命中 `*.key.pem`（如 gateway-client-ca.key.pem），
+# 靠这里让私钥优先、不被后面的公开项改回 644。
+declare -A _secret_seen=()
 for f in "${TARGET_FILES_SECRET[@]}"; do
   [[ -e "${f}" ]] || continue # glob 不匹配时是字面量，跳过
   [[ -f "${f}" ]] || { echo "  跳过 ${f}（存在但不是普通文件）" >&2; continue; }
+  _secret_seen["${f}"]=1
   [[ "$(state_of "${f}")" == "${OWNER_UID}:${CONTAINER_GID}:${TARGET_FILE_MODE}" ]] || { files_todo+=("${f}"); files_todo_mode+=("${TARGET_FILE_MODE}"); }
 done
 for f in "${TARGET_FILES_PUBLIC[@]}"; do
   [[ -e "${f}" ]] || continue
   [[ -f "${f}" ]] || { echo "  跳过 ${f}（存在但不是普通文件）" >&2; continue; }
+  [[ -n "${_secret_seen[${f}]:-}" ]] && continue # 已按私钥处理（640），别被公开项覆盖
   [[ "$(state_of "${f}")" == "${OWNER_UID}:${CONTAINER_GID}:${PUBLIC_FILE_MODE}" ]] || { files_todo+=("${f}"); files_todo_mode+=("${PUBLIC_FILE_MODE}"); }
 done
 

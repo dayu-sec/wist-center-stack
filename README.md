@@ -172,8 +172,9 @@ compose 还挂这些路径：
    `scripts/init-center.sh` 现场备料 + 模板渲染；凭据在 `<栈根>/.wist/sec-value.yml`（见上「密钥」），
    `configs/center/wist-center.toml` 里只写占位符。
 2. `identity/center/` —— **站点身份 + 现场态**（dev/prod 共用，整体作对外契约）。**仓库不含**：
-   `control-center.pem`（分发给网关的信任根）/ `control-center-ca.key` / `control-center-server.{crt,key}`
-   由 `scripts/init-center.sh` 现场生成；`wist-center-pub.toml`（**现场态声明**，只写 `${VAR}`）由
+   `control-center.pem`（分发给网关的信任根）/ `control-center-ca.key` / `control-center-server.{crt,key}`，
+   以及 `gateway-client-ca.{pem,key.pem}`（**网关客户端 CA / CA-G**：中心用它给注册入网的网关签客户端证书），
+   均由 `scripts/init-center.sh` 现场生成（缺什么补什么）；`wist-center-pub.toml`（**现场态声明**，只写 `${VAR}`）由
    `gx.tpl` 渲染；同目录 `.env`（**现场态值**）由 `scripts/init-center-pub.sh` 按缺补齐。compose 把本目录
    只读挂到容器 `/wist-center/ca`，并用 `WIST_CENTER_PUB_CONFIG=/wist-center/ca/wist-center-pub.toml` 指向它。
 3. `sys/configs/web/nginx.conf.tpl` —— 前端站点配置**模板**。**仓库自带**，由 `gops sys localize`

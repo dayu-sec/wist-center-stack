@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 备料控制中心配置的**渲染值** <配置目录>/wist-center.value.json（localize 里 gx.tpl 的输入），
-# 并在缺失时生成控制中心 CA（信任根 + 服务器证书），以及中心凭据的**密钥文件**。
+# 并在缺失时生成控制中心 CA（信任根 + 服务器证书）、**网关客户端 CA（CA-G）**，以及中心凭据的**密钥文件**。
 #
 # 用法：
 #   scripts/init-center.sh <配置目录> <对外域名>
@@ -80,6 +80,35 @@ fi
 #   前端反代（web 容器，见 sys/docker-compose.yml）用它终止 HTTPS；网关校 init_url 主机名也用它。
 #   **CA 不变** —— 换域名 / 加 SAN 只重签这张叶；幂等（已覆盖就不重签）。
 "${SCRIPT_DIR}/ensure-center-server-cert.sh" "${IDENTITY_DIR}" "${DOMAIN}" "${CENTER_EXTRA_SANS:-}"
+
+# ── 1c) 网关客户端 CA（CA-G）：缺失才生成 ──
+#   中心用它给「注册入网」的网关签发**客户端证书**（mTLS）。路径不另配：中心默认取同目录的
+#   `gateway-client-ca.{pem,key.pem}`（= 站点身份 `identity/center/`，容器**只读**挂到 /wist-center/ca）。
+#   **必须宿主侧备料**：该目录是**只读挂载**，缺 CA-G 时中心会尝试现生成，直接以
+#   `failed to write /wist-center/ca/gateway-client-ca.tmp: Read-only file system` 崩溃重启
+#   （全新现场、以及从旧版本升上来但没搬过 CA-G 的现场，都会踩）。
+#   幂等：已存在即跳过 —— 换 CA-G = 已入网网关的客户端证书全部失效（须重入网），非缺失一律不碰。
+#   密钥用 EC P-256 / PKCS#8（与中心自身生成的一致）；证书自签、basicConstraints=CA:TRUE。
+GW_CLIENT_CA_KEY="${IDENTITY_DIR}/gateway-client-ca.key.pem"
+GW_CLIENT_CA_CRT="${IDENTITY_DIR}/gateway-client-ca.pem"
+if [[ -f "${GW_CLIENT_CA_KEY}" && -f "${GW_CLIENT_CA_CRT}" ]]; then
+  note "网关客户端 CA 已存在，跳过生成：${GW_CLIENT_CA_CRT}"
+else
+  command -v openssl >/dev/null 2>&1 || { echo "错误：缺少 openssl，无法生成网关客户端 CA" >&2; exit 1; }
+  note "生成网关客户端 CA（CA-G）→ ${IDENTITY_DIR}"
+  GW_CLIENT_CA_CSR="${IDENTITY_DIR}/gateway-client-ca.csr"
+  GW_CLIENT_CA_EXT="${IDENTITY_DIR}/gateway-client-ca.ext"
+  openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out "${GW_CLIENT_CA_KEY}"
+  openssl req -new -key "${GW_CLIENT_CA_KEY}" -subj "/CN=WarpInsight Gateway Client CA" -out "${GW_CLIENT_CA_CSR}"
+  cat > "${GW_CLIENT_CA_EXT}" <<EOF
+basicConstraints = critical,CA:TRUE
+keyUsage = critical,keyCertSign,cRLSign
+EOF
+  openssl x509 -req -in "${GW_CLIENT_CA_CSR}" -signkey "${GW_CLIENT_CA_KEY}" \
+    -days "${GW_CLIENT_CA_DAYS:-3650}" -sha256 -extfile "${GW_CLIENT_CA_EXT}" \
+    -out "${GW_CLIENT_CA_CRT}"
+  rm -f "${GW_CLIENT_CA_CSR}" "${GW_CLIENT_CA_EXT}"
+fi
 
 # 注：**现场态（站点事实 `public_url`）不在本脚本里** —— **声明** `${IDENTITY_DIR}/wist-center-pub.toml`
 #   （只写 `${VAR}`、可重渲）由 tpl 渲染；**值** `${IDENTITY_DIR}/.env` 由 scripts/init-center-pub.sh
