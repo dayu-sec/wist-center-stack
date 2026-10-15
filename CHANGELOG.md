@@ -3,6 +3,23 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.1.9-alpha] - 2026-10-15
+
+### 变更
+
+- **镜像 tag 跟进**：中心 `v0.13.0-alpha`、前端 `v0.5.0-alpha`；**网关镜像默认值**（中心生成「网关安装命令」
+  时写进渲染配置的那条）跟随网关栈对齐到 `v0.10.0-alpha`。
+  本轮带来：中心**「录入安装包」支持腾讯云 COS 路径一键填充**（新端点 `POST /api/v1/admin/cos/resolve`）、
+  网关安装脚本拆成 `install-all`（全量）与 `install-linkd`（网关已部署时只补装宿主侧 gwlinkd）；
+  前端**新增浅色主题**（默认仍深色）、管理令牌入口挪到右上角状态条。
+
+### 升级注意
+
+- **中心与前端必须同版升级**：`wist-center 0.13.0` 改了安装脚本端点与安装材料字段名
+  （`/api/v1/gateway/install-script` → `/install-all`、`install_script_command` → `install_all_command`，
+  并新增 `install_linkd_command`；错误码 `install_script_unavailable` → `install_all_unavailable`）——
+  页面 `0.5.0` 已同步，两者不同版会出现「拿不到安装命令」。旧端点 / 旧错误码不再提供。
+
 ## [0.1.8-alpha] - 2026-10-14
 
 ### 变更
