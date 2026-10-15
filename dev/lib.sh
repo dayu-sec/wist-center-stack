@@ -12,6 +12,15 @@ LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK_ROOT="$(cd "${LIB_DIR}/.." && pwd)"
 # 本仓位于 wist-center-stack/，与各 crate 平级：ROOT_DIR 是它们的父目录。
 ROOT_DIR="$(cd "${STACK_ROOT}/.." && pwd)"
+# 2026-10 目录重组：crate / 前端收拢进 `wist/` 仓组。脚本还在旧栈位置
+# （wist-stack/wist-center-stack/dev）时上一级是 x-topology，wist 组是其下的 `wist/`；
+# 脚本随栈迁到 wist/wist-center-stack/dev 后上一级本身就是 wist 组 —— 两种位置都能解析。
+# （与 wist-gateway-stack/dev/svc.sh 同口径。）
+if [[ -d "${ROOT_DIR}/wist/wist-center" ]]; then
+  ROOT_DIR="${ROOT_DIR}/wist"
+elif [[ -d "${ROOT_DIR}/../wist/wist-center" ]]; then
+  ROOT_DIR="$(cd "${ROOT_DIR}/../wist" && pwd)"
+fi
 CENTER_CRATE="${ROOT_DIR}/wist-center"
 WEB_DIR="${ROOT_DIR}/wist-center-web"
 
@@ -465,6 +474,8 @@ start_center() {
   echo "== 启动 wist-center（${CENTER_SCHEME}://${CENTER_ADDR}）=="
   # 配置文件提供默认值；env 覆盖运行态：监听地址、存储/制品目录、依赖地址、TLS；
   # 凭据（${SEC_CENTER_*}）由 WIST_CENTER_SEC_FILE 指向的密钥文件解析。
+  # COS 解析的 region（下载 host 里那段）：**钉住**，免得自动试时回落到陈旧的其他区域桶；
+  # 换区域 / 回到自动试：改这里的默认值，或导出 WIST_CENTER_COS_REGION=（置空即自动试）。
   env \
     WIST_CENTER_CONFIG="${CENTER_CONFIG}" \
     WIST_CENTER_SEC_FILE="${CENTER_SEC_FILE}" \
@@ -479,6 +490,7 @@ start_center() {
     WARP_INSIGHT_CENTER_SERVER_KEY_PATH="${tls_key}" \
     WARP_INSIGHT_CENTER_PUBLIC_URL="${public_url}" \
     WARP_INSIGHT_CENTER_CA_CERT_PATH="${ca_cert}" \
+    WIST_CENTER_COS_REGION="${WIST_CENTER_COS_REGION:-ap-hongkong}" \
     nohup "${center_bin}" >"${CENTER_LOG}" 2>&1 &
   local center_pid=$!
   write_pidfile "${CENTER_PID_FILE}" "${center_pid}"
