@@ -3,6 +3,21 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.1.11-alpha] - 2026-10-18
+
+### 变更
+
+- **中心 / 前端镜像 tag 跟进**：`CENTER_TAG → v0.16.0-alpha`、`WEB_TAG → v0.9.0-alpha`。本轮：
+  - 中心：知识库包**管理**（复用 release 通道，组件 `wist-knowledge`，发布时连带镜像 `.sig`）
+    与**下发**（计划动作 `push-knowledge-package`，`activate` 缺省不激活）。
+  - 前端：「安装包管理 / 录入」新增知识库组件；「发布计划」新增「③ 知识库下发」。
+- **`GATEWAY_IMAGE` 对齐 `v0.16.0-alpha`**（生成的网关安装命令用）。
+
+### 升级顺序
+
+- 先升**网关**（`v0.16.0-alpha`）与**宿主侧 gwlinkd**（`0.13.0-alpha`），再升本栈。
+  旧 gwlinkd 不认识 `push-knowledge-package`，会把它当 `upgrade` 去跑 gops。
+
 ## [0.1.10-alpha] - 2026-10-17
 
 ### 变更
