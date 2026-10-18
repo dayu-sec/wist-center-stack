@@ -3,6 +3,17 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.1.13-alpha] - 2026-10-18
+
+### 变更（组件版本）
+
+- **VictoriaMetrics `v1.153.0 → v1.154.0`**（常规小版本；中心与网关两个栈同步）。
+
+### 备注
+
+- 中心 / 前端 / 网关镜像不变：`CENTER_TAG v0.17.0-alpha`、`WEB_TAG v0.10.0-alpha`、
+  `GATEWAY_IMAGE v0.17.0-alpha`。
+
 ## [0.1.12-alpha] - 2026-10-18
 
 ### 变更
