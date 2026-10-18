@@ -6,9 +6,9 @@ system:
 - name: PG_SPC
   value: docker.io/library
 - name: CENTER_TAG
-  value: v0.17.1-alpha
+  value: v0.17.2-alpha
 - name: WEB_TAG
-  value: v0.10.1-alpha
+  value: v0.10.2-alpha
 - name: VM_TAG
   value: v1.154.0
 - name: GATEWAY_IMAGE
