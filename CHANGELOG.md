@@ -3,6 +3,27 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.1.10-alpha] - 2026-10-17
+
+### 变更
+
+- **镜像 tag 跟进**：中心 `v0.15.1-alpha`、前端 `v0.7.0-alpha`；**网关镜像默认值**（中心生成
+  「网关安装命令」时写进渲染配置的那条）跟随 `wist-gateway-stack v0.1.40-alpha` 对齐到 `v0.12.0-alpha`。
+  本轮带来：中心支持 **`wist-gwlinkd` 作为升级计划目标**（宿主侧自更新，计划里带 `artifact_sha256`），
+  并把 gwlinkd 安装布局改为可自更新（真实二进制 `/usr/local/lib/wist-gwlinkd/` + `/usr/local/bin` 符号链接）；
+  新增**单台网关手动升级脚本**端点（`POST /api/v1/admin/gateways/{id}/upgrade-script`，生成
+  `curl … | bash` 一行命令，按组件 + 版本命名、30 分钟 HMAC 短命签名，**不建计划、不下发任务**）。
+  前端网关详情页新增「手动升级」面板；发布页 ① 可选 `wist-gwlinkd`。
+
+### 升级注意
+
+- **中心与前端必须同版升级**：手动升级面板依赖中心新增的
+  `/api/v1/admin/gateways/{id}/upgrade-script` 与网关面 `/api/v1/gateway/upgrade-script`；
+  页面 `0.7.0` 已同步，中心仍是旧版时面板会报 404。
+- **gwlinkd 走升级计划（自更新）要求宿主侧 ≥ `0.12.0-alpha`**：旧版 gwlinkd 不认识该组件，
+  先执行一次「只装 gwlinkd」脚本完成本体替换与布局迁移。**不建计划的手动升级不受此限** ——
+  脚本直接下载指定版本、校验 sha256 后覆盖二进制并重启服务。
+
 ## [0.1.9-alpha] - 2026-10-15
 
 ### 变更
