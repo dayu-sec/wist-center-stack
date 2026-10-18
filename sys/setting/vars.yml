@@ -28,12 +28,12 @@ system:
     value: docker.io/library
 
   # 镜像 tag：中心后端与前端各自独立发版，tag 分开；需要钉版本时改这里。
-  #   CENTER_TAG 对应 wist-center 的 release tag（v0.17.0-alpha）
-  #   WEB_TAG    对应 wist-center-web 的 release tag（v0.10.0-alpha）
+  #   CENTER_TAG 对应 wist-center 的 release tag（v0.17.1-alpha）
+  #   WEB_TAG    对应 wist-center-web 的 release tag（v0.10.1-alpha）
   - name: CENTER_TAG
-    value: v0.17.0-alpha
+    value: v0.17.1-alpha
   - name: WEB_TAG
-    value: v0.10.0-alpha
+    value: v0.10.1-alpha
   # 观测镜像 tag（源前缀见 VM_SPC）
   - name: VM_TAG
     value: v1.154.0
