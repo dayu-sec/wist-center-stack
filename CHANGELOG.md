@@ -3,6 +3,32 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.1.15-alpha] - 2026-10-18
+
+### 变更
+
+- **中心挂载按语义拆开**（与 `wist-gateway-stack` 对齐）：`configs/center` 不再是整目录读写挂载源，
+  改成 `wist-center.toml`（只读）+ `state/`（读写，JSON store）+ `logs/`（读写）。
+  compose 契约与真实意图一致，权限对齐能精确到「配置只读、运行态可写」。
+- **权限对齐统一走 `gops sys perms`**（gops ≥ 2.7，本栈硬要求），删除 `scripts/align-host-perms.sh`。
+  名单从 `docker compose config` 派生（服务 `user:` + `volumes.read_only`），增减挂载只需改 compose。
+  `gops sys localize` 的阶段流程末尾自动 `gops sys perms --apply`；`gops run start` preflight
+  会在未对齐时拦住启动。
+- **安装包来源配置进模板**：`wist-center.toml.tpl` 新增 `[[packages.sources]]`（wist-agentd /
+  wist-gateway-stack / wist-gwlinkd / galaxy-ops / galaxy-flow / wist-knowledge 的 GitHub 仓库与
+  COS 桶前缀）。录入页可按版本号自动拼地址 + 探活，不再每次手填完整 URL。
+  注：解析 `[packages]` 需要中心 ≥ 0.17.2；当前钉的 `CENTER_TAG=v0.17.1-alpha` 会**忽略**该段
+  （serde 不拒未知字段，启动不受影响），升中心后自动生效。
+- `dev/configs/` 纳入 `.gitignore` 与 `sys-prj.yml` 的 `ignore`/`protect`（开发态运行物，含密钥）。
+- `dev/push-images.sh` 收尾提示改成本栈真实变量（`WIST_SPC` / `PG_SPC` / `VM_SPC`）—— 之前是从
+  gateway-stack 拷来的，写的是 `WARP_SPC`。
+
+### 升级要求
+
+- **gops ≥ 2.7**（`gops sys perms`）、**gx ≥ 0.14**（`localize` 阶段流程）。
+- 升级后先 `gops sys localize`（备料 + 渲染 + 末尾权限对齐），再 `gops run start`。
+  直接 `docker compose up` 会绕过 preflight —— 别这么做。
+
 ## [0.1.14-alpha] - 2026-10-18
 
 ### 变更
