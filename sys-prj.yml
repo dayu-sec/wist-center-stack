@@ -59,9 +59,13 @@ protect:
 # 服务器 / 客户端证书（= 换锚、所有网关重发信任根），契约等于冻结 / 作废。故整目录进 contract，
 # 让 `contract export` 出来的归档即可**独立复原站点身份**。
 #
-# 语义**自足**：命中即 **不覆盖（protect）+ 必收（backup）+ 不进包**，不必再写进上面三节。
-# ⚠ 因为含私钥，`gops prj contract export` 的归档是**密件**：落点（`ops-prj.yml: contract.target`）
-#   要放在**安全 / 离机**处，与整站备份同等级别对待。
+# 语义：命中即 **不覆盖（protect）+ 不进包**，不必再写进上面 `ignore` / `protect` 两节。
+# ⚠ **备份要单独做**：`gops prj backup` **只收下面 `backup:` 表**，不含 `contract`（实测：本栈
+#   的 `prj backup` 产物只有 `configs/` + `.wist/`）。站点身份的唯一备份通路是显式导出：
+#     gops prj contract export     # → <ops-prj.yml: contract.target>/<prj>-contract-<时间戳>.tar.gz
+#   部署 / 升级 / 域名变更后都跑一次。⚠ 归档含 CA / 服务器 / 网关客户端 CA 私钥，是**密件**：
+#   落点（`ops-prj.yml: contract.target`）要**安全且离机**，与整站备份同等级别对待；gops 产出的
+#   文件默认 0644，交付后自行收紧（如 `chmod 600`）。
 # ⚠ 已知（gops 2.3.0）：`sys package` **尚未把 `contract` 计入排除**，故 `--full` 下 `identity/` 仍可能进包；
 #   发布走 `.github` 的 `git archive` + `.gitignore`（含 `/identity/`），不受影响 —— 待 gops 修复后再靠 `--full`。
 contract:
@@ -78,9 +82,12 @@ contract:
 # 制品镜像（`artifacts/`）是**可重建**的（从 release 来源地址镜像来的，丢了可重新录入）—— 故**不进本表**。
 #
 # gops 2.3 起 `backup:` 是**扁平列表**（旧的分档 `{restore, rebuild}` 形式已取消）：
-# 列进来的都会被 `gops prj backup` 收走。站点身份（`identity/`）已由上面的 `contract`
-# **自动纳入备份**（取 `backup ∪ contract`），这里**不要**再列一遍 —— 同一路径写两处会触发
-# `contract.overlap`（诊断当声明错误报出）。
+# 列进来的都会被 `gops prj backup` 收走。
+# ⚠ 站点身份（`identity/`）**不在本表、也不会被自动收进 `prj backup`** —— `backup` 与 `contract`
+#   是两条互不合并的通路（实测本栈 `prj backup` 只产 `configs/` + `.wist/`）。身份走
+#   `gops prj contract export`（见上）。
+#   也**不要**把它写进本表：同一路径既在 `contract` 又在 `backup` 会触发 `contract.overlap`
+#   （诊断当声明错误报出）。
 backup:
   - configs
   - .wist

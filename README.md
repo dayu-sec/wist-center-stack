@@ -84,9 +84,12 @@ wist-center-stack/
 >   服务器证书 / 私钥）是身份，`wist-center-pub.toml`（声明）+ `.env`（值）是现场态。整体作**对外契约**
 >   （`sys-prj.yml` 的 `contract: - identity`），不随资源树被升级覆盖；compose 只读挂到容器
 >   `/wist-center/ca`。丢了 CA 私钥 = 换锚（所有网关要重发信任根），故备份/迁移必带它。
+>   **备份走 `gops prj contract export`**（产物在 `ops-prj.yml: contract.target`）：`gops prj backup`
+>   **只收 `sys-prj.yml: backup` 表里的 `configs/` + `.wist/`，不含 `identity/`** —— 两者是两条
+>   互不合并的通路。归档含私钥，请收紧权限（如 `chmod 600`）并离机保存。
 > - **制品镜像统一落 `<栈根>/artifacts/`**（开发态与发布态同一个位置；发布态由 compose 挂到容器
 >   `/wist-center/artifacts`）—— 它是发布时下载/镜像下来的安装包，属数据、不属配置，故与 `configs/`
->   分开（便于单独备份；备份分级见 `sys-prj.yml`）。
+>   分开（便于单独备份；哪些进 `gops prj backup` 见 `sys-prj.yml` 的 `backup:` 表）。
 > - 发布态配置落挂载卷 `configs/center/`（`state/` 存 JSON store；用 PostgreSQL 时不用）。
 
 ## 发布态（经 gops 管理）
