@@ -3,6 +3,24 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.1.16-alpha] - 2026-10-18
+
+### 变更（组件版本）
+
+- **中心 / 前端镜像 tag 跟进**：`CENTER_TAG → v0.17.2-alpha`、`WEB_TAG → v0.10.2-alpha`。本轮：
+  - 中心：安装包来源配置 `[packages.sources]` + `GET /api/v1/admin/package-sources`、
+    `.../package-sources/latest`；未配置/非法来源返回 400（不再 502）；GitHub tag 兼容带/不带 `v`；
+    COS 制品 key 覆盖 `v` / 裸版本 × 平台制品 × 单制品。
+  - 前端：录入页按版本号拼地址、自动探测最新版本并预填；操作者手改后不再被自动结果覆盖。
+- **`[packages.sources]` 自本版起真正生效**（0.1.15 已把段写进模板，但钉的中心 0.17.1 会忽略它）。
+
+### 文档
+
+- 纠正 `contract` 与 `backup` 的关系：`gops prj backup` **只收 `backup:` 表**，不含 `identity/`；
+  站点身份走显式 `gops prj contract export`（归档含私钥，注意收紧权限并离机保存）。
+- 补「升级时端口被占 -> 回滚停在中间态（容器无网络）」的处置；`gops run *` 必须在系统根执行；
+  中心 API 实为 HTTPS。
+
 ## [0.1.15-alpha] - 2026-10-18
 
 ### 变更
