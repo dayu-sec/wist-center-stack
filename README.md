@@ -267,8 +267,12 @@ gops run status
 ```
 
 `CENTER_PORT` / `WEB_PORT` 的**默认值（3100 / 18080）刻意避开了网关栈的 443 / 8443**；
-现场把它们改成 443 / 8443 后就**不能与网关栈同机同时运行**（本栈与 `wist-gateway-stack`
-共用固定容器名前缀，本就只允许一套）。
+现场把它们改成 443 / 8443 后就**不能与网关栈同机同时运行**（端口冲突，与容器名无关：
+本栈容器名是 `wist-center-stack-*`，网关栈是 `wist-gateway-stack-*`）。
+
+> 上面这些命令都在**系统根**（本目录，即 `.../wist-center-stack/`）执行。
+> 在维护工程根（如 `wcenter-alpha/`）执行 `gops run start` 会被当成工程的 `main` 流程，
+> 报 `Galaxy Flow Parse Error … detail: start` —— 不是栈坏了，是目录错了。
 
 ## 开发态（本地二进制）
 
