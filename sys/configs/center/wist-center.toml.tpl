@@ -1,6 +1,6 @@
 # wist-center 运行配置**模板**（handlebars，由 localize 渲染）。
 # src: 本文件（sys/configs/center/wist-center.toml.tpl）
-# dst: configs/center/wist-center.toml（sys/docker-compose.yml 把 configs/center 挂到容器 /wist-center）
+# dst: configs/center/wist-center.toml（sys/docker-compose.yml 只把这个文件只读挂到容器 /wist-center）
 # 渲染值：configs/center/wist-center.value.json（scripts/init-center.sh 生成）
 #
 # **两份配置**（对齐 foundation/config-and-state-layout §5）：
@@ -58,6 +58,46 @@ object_storage_endpoint = ""
 object_storage_bucket = ""
 object_storage_access_key = ""
 object_storage_secret_key = ""
+
+# 安装包来源：录入页按**版本号**拼 GitHub Release 地址 / COS 路径，再做 URL 探活。
+# GitHub 与 COS 可同时配；只配一个时另一个仍可手工粘贴地址。只写位置，不写凭据。
+[packages]
+
+[[packages.sources]]
+component = "wist-agentd"
+github_repo = "dayu-sec/wist-agentd"
+cos_bucket = "github-1347593047"
+cos_prefix = "wist-agentd"
+cos_region = "ap-hongkong"
+
+[[packages.sources]]
+component = "wist-gateway-stack"
+github_repo = "dayu-sec/wist-gateway-stack"
+cos_bucket = "github-1347593047"
+cos_prefix = "wist-gateway-stack"
+cos_region = "ap-hongkong"
+
+[[packages.sources]]
+component = "wist-gwlinkd"
+github_repo = "dayu-sec/wist-gwlinkd"
+cos_bucket = "github-1347593047"
+cos_prefix = "wist-gwlinkd"
+cos_region = "ap-hongkong"
+
+[[packages.sources]]
+component = "galaxy-ops"
+github_repo = "galaxio-labs/galaxy-ops"
+
+[[packages.sources]]
+component = "galaxy-flow"
+github_repo = "galaxio-labs/galaxy-flow"
+
+[[packages.sources]]
+component = "wist-knowledge"
+github_repo = "dayu-sec/wist-knowledge"
+cos_bucket = "github-1347593047"
+cos_prefix = "wist-knowledge"
+cos_region = "ap-hongkong"
 
 [enrollment]
 # 启动时写入 store（仅缺失时写入）的网关种子凭据，每项 `gateway_id:token`。

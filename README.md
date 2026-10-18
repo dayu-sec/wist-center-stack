@@ -57,7 +57,7 @@ wist-center-stack/
       web/nginx.conf.tpl                # 前端站点配置模板（渲染出 configs/web/nginx.conf）
   values/                   # gops 值文件（sys_value.yml 生成；value.yml 客户覆盖，版本化）
   configs/                  # 运行期配置（现场生成，不入 git / 不入包）
-    center/                 # 发布态：wist-center.toml（由模板渲染）+ state/（JSON store / logs）
+    center/                 # 发布态：wist-center.toml（由模板渲染）+ state/（JSON store）+ logs/（中心日志）
     web/                    # 发布态：nginx.conf（由模板渲染）
   identity/                 # 站点身份 + 现场态（dev/prod 共用，含私钥，不入 git / 不入包）：
                             #   center/（CA + 服务器证书/私钥 + wist-center-pub.toml 声明 + .env 值）
@@ -69,7 +69,6 @@ wist-center-stack/
     ensure-center-server-cert.sh  # 服务器证书（叶）SAN 覆盖对外域名（幂等重签，不动 CA）
     init-center-pub.sh      # 现场态**值**（CENTER_PUBLIC_URL）→ identity/center/.env（按缺补齐）
     init-web-conf.sh        # 前端站点配置的渲染值（幂等；域名取 CENTER_DOMAIN）
-    align-host-perms.sh     # 宿主属主/权限对齐（属主=部署账号、属组=容器 gid 999；幂等）
   dev/                      # 开发态：本地二进制 + vite（单一入口 svc.sh）
     svc.sh                  # 统一入口：start / stop / restart / status / token（组件 deps|center|web）
     lib.sh                  # 公共函数（svc.sh source 它）
@@ -110,6 +109,8 @@ wist-center-stack/
 | 项 | 要求 | 怎么验 |
 |---|---|---|
 | Docker + Compose V2 | `docker compose` 是 **CLI 插件**；只有老的 `docker-compose` v1 不够 | `docker compose version` 能打印 `v2.x` |
+| gops | **必须 ≥ 2.7**（权限对齐由 `gops sys perms` 提供；旧版没有该子命令） | `gops -V` |
+| gx | **≥ 0.14**（`localize` 阶段流程；缺失时 `localize` 只写 `.env`，权限 `--apply` 也不会执行） | `gx -V` |
 | 执行账号 | 普通账号 + **已加入 `docker` 组**；部署目录由它拥有 | `id -nG`（输出里应含 `docker`） |
 | 端口 | 宿主 `${CENTER_PORT}` / `${WEB_PORT}` / `${PG_PORT}` / `${VM_PORT}` | 见 `sys/setting/vars.yml` |
 
@@ -135,7 +136,7 @@ gops sys localize
 （**本地定义**，不引外部 ops-gxl），由 `_gal/work.gxl` 的 `mod main : operators` 纳入；合并后的值以
 **环境变量**注入该流程（用 `$(printenv XXX)` 读）。流程里做四件**幂等**的事：
 
-1. 确保 `configs/center`、`configs/web`、`identity/center` 存在；
+1. 确保 `configs/center`、`configs/web`、`identity/center`、`artifacts` 存在；
 2. 备料控制中心：CA（信任根 + 服务器证书，落站点身份 `identity/center/`）+ 渲染值
    `configs/center/wist-center.value.json` + 凭据密钥文件 `<栈根>/.wist/sec-value.yml`
    （`scripts/init-center.sh`，缺什么补什么）；再**渲染现场态声明**
@@ -143,11 +144,12 @@ gops sys localize
    按缺补齐**现场态值** `identity/center/.env`（永不重渲）；
 3. 渲染 `configs/center/wist-center.toml`（模板在 `sys/configs/center/wist-center.toml.tpl`），
    并写前端站点配置的渲染值 + 渲染 `configs/web/nginx.conf`（`scripts/init-web-conf.sh` + 模板）；
-4. **宿主属主/权限对齐**（`scripts/align-host-perms.sh`；非 Linux 自动跳过）——
+4. **宿主属主/权限对齐**（`gops sys perms --apply`，gops ≥ 2.7；见下「权限与运行身份」；非 Linux 自动跳过）——
    必须在 `docker compose up` **之前**：Docker 会把缺失的挂载源目录自行建成 `root:root`，
    属主一旦是 root，之后的部署账号就写不动了。
 
-`gops sys localize --no-flow` 可跳过该流程。
+`gops sys localize --no-flow` 可跳过该流程；未装 gx 或无该流程时静默跳过（此时权限 `--apply` 也不会执行，
+但 `gops run start` 的 preflight 会拦住未对齐的启动）。
 
 ### 密钥（不落盘）
 
@@ -168,9 +170,13 @@ center_hmac_secret: <RegistToken 派生密钥>
 
 compose 还挂这些路径：
 
-1. `configs/center/` —— 中心渲染配置（`wist-center.toml`）与 JSON store。**仓库不含**，由
-   `scripts/init-center.sh` 现场备料 + 模板渲染；凭据在 `<栈根>/.wist/sec-value.yml`（见上「密钥」），
+1. `configs/center/` —— 中心渲染配置与 JSON store。**仓库不含**，由 `scripts/init-center.sh` 现场备料
+   + 模板渲染。compose **只挂其中三块**：`wist-center.toml`（只读）、`state/`（读写）、`logs/`（读写）；
+   `wist-center.value.json` 是渲染源、不进容器。凭据在 `<栈根>/.wist/sec-value.yml`（见上「密钥」），
    `configs/center/wist-center.toml` 里只写占位符。
+   > `configs/center/` **本身不再是挂载源**：它必须由 `gops sys localize` 以**部署账号**创建。
+   > **不要先 `docker compose up` 再 localize** —— Docker 会以 root 建出缺失的挂载源，而且缺失的
+   > `wist-center.toml` 会被建成同名**目录**（之后渲染会失败）。
 2. `identity/center/` —— **站点身份 + 现场态**（dev/prod 共用，整体作对外契约）。**仓库不含**：
    `control-center.pem`（分发给网关的信任根）/ `control-center-ca.key` / `control-center-server.{crt,key}`，
    以及 `gateway-client-ca.{pem,key.pem}`（**网关客户端 CA / CA-G**：中心用它给注册入网的网关签客户端证书），
@@ -188,9 +194,43 @@ compose 还挂这些路径：
 ### 权限与运行身份（Linux 必读）
 
 `center` 镜像**固定以 `999:999` 运行**（镜像里 `useradd -r wist`；compose 里 `user:` 已显式钉死）。
-bind 挂载在 Linux 上**不改变属主**，所以宿主侧必须显式对齐，否则容器写不出 `state/`、读不到 CA 证书。
-`scripts/align-host-perms.sh`（localize 流程会自动跑）把 `configs/`、`artifacts/` 与 `identity/center/`
-对齐成属主=部署账号、属组=999：目录 2770（容器要写）/ 2755、2750（容器只读）、私钥 640、公开证书 644。
+bind 挂载在 Linux 上**不改变属主**，所以宿主侧必须显式对齐，否则容器写不出 `state/`、读不到 CA 私钥。
+
+**统一入口是 `gops sys perms`（gops ≥ 2.7，本栈硬要求）**：
+
+```bash
+gops sys perms            # 只检查（未对齐 exit≠0）
+gops sys perms --apply    # 幂等修复
+```
+
+它从 `docker compose config` 派生每个 bind 挂载的 `source` 与 `read_only`，按服务 `user:` 对齐，**不需要本仓维护名单**：
+
+- **属主 = 部署账号**（`SUDO_UID`/euid），**属组 = 容器 gid**；部署账号要改配置、跑备份/恢复，所以不需要提权；
+- **读写挂载**（`configs/center/state`、`configs/center/logs`、`artifacts`）→ 文件 `0660`、目录 `2770`（setgid）；
+  **只读挂载**（`wist-center.toml`、`identity/center`、`.wist`）→ 文件 `0640`、目录 `2750`；
+- **容器自己创建的**（owner = 容器 uid，如 JSON store）不碰 —— 零 sudo 幂等；
+- 只处理**系统根内**的 bind source；根外路径要在 `sys-prj.yml: perms.allow_external` 显式声明；
+- rootless / userns-remap：必须配 `sys-prj.yml: perms.container_uid/gid`（gops 会明确报错，不静默按 999 对齐）；
+- 不跟随符号链接、不碰 named volume；**仅 Linux**（macOS / OrbStack 打印 `[SKIP]`）。
+
+生命周期：`gops sys localize` 末尾做一次**只告警**的自检；`gops run start` preflight（未对齐即停）；
+`gops prj restore` / `prj upgrade` 自动 `--apply`。`localize` 的阶段流程也会在最后跑一次 `gops sys perms --apply`，
+保证「localize 完就能 start」。
+
+> **这些保证只覆盖 gops 入口**：`gops sys localize`（阶段流程 apply）、`gops run start`（preflight）、
+> `gops prj restore/upgrade`（自动 apply）。直接 `docker compose up` 会绕过全部检查 —— 部署请始终走 gops。
+
+> `web` / `postgres` / `db-schema` 的身份不需要对齐：`web` 以 **root** 运行（镜像没有 `user:`，`gops sys perms`
+> 会提示「身份无法确定」并跳过它的只读挂载）；`postgres` 用 named volume（不在 bind 范围内）。
+
+常见症状（Linux 部署事故）：
+
+| 症状 | 日志 | 原因 |
+|---|---|---|
+| center 无限重启 | store 打开失败 / `Permission denied (os error 13)` | `configs/center/state` 属主不是 999 且组不可写 |
+| center 拒启 | `failed to load secrets /secrets/sec-value.yml` | `.wist/sec-value.yml` 是 `600` 且属主不是 999 |
+| center 不提供信任根 | 读 `ca/control-center.pem` / `*.key` 失败 | `identity/center` 未对齐（目录 2750 / 私钥 640） |
+| 制品无法写入 | 上传 / 镜像落盘报错 | `artifacts/` 属主是 root（被 `docker compose up` 先建出来了） |
 
 ### 起来之后
 
@@ -200,10 +240,13 @@ bind 挂载在 Linux 上**不改变属主**，所以宿主侧必须显式对齐�
 - 起停与排查：
 
 ```bash
-gops run start            # 或 docker compose -f sys/docker-compose.yml --project-directory . up -d
+gops run start
 gops run status
 gops run stop
 ```
+
+> 别用裸 `docker compose up` 起栈：它绕过 `gops run start` 的 preflight（权限未对齐会直接拦住）
+> 和 `gops prj restore/upgrade` 的自动 `--apply`。
 
 ## 开发态（本地二进制）
 

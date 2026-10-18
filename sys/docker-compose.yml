@@ -108,7 +108,7 @@ services:
   # ── 控制中心后端 ──
   #
   # 配置与密钥**卷挂载注入**，不烘焙进镜像：${CENTER_CONFIG_DIR}（渲染出的 wist-center.toml + state/logs）
-  # 挂到容器 /wist-center，容器内 WIST_CENTER_CONFIG 指向它。
+  # 按语义**拆开挂**到容器 /wist-center（见下面 volumes），容器内 WIST_CENTER_CONFIG 指向主配置。
   # 站点身份（CA / 服务器证书 / 私钥）**不在 configs/ 里**：它在栈根 `identity/center/`（dev/prod 共用、
   # 整体作对外契约），只读挂到容器 /wist-center/ca（模板 ca_cert_path 指向 /wist-center/ca/control-center.pem）。
   # 密钥（admin token / hmac secret）不落配置：配置里写 `${SEC_*}`，由 WIST_CENTER_SEC_FILE
@@ -119,7 +119,8 @@ services:
   # 中心**开服务端 TLS，并校网关客户端证书（mTLS）**：网关直连 3100，靠客户端证书认人
   #（客户端证书**可选** —— 首注册的网关还没有证书；无证书不等于未鉴权，应用层再判）。
   # 管理面浏览器走 web 容器的 TLS 终止（见下）；web → center 这一跳也走 https。
-  # 运行身份 999:999（镜像里 `useradd -r wist`），宿主侧由 scripts/align-host-perms.sh 对齐。
+  # 运行身份 999:999（镜像里 `useradd -r wist`）；宿主侧由 `gops sys perms` 对齐（gops ≥ 2.7，本栈硬要求），
+  # 它从本文件的 `user:` + `volumes.read_only` 派生，不需要本仓另维护名单。
   center:
     container_name: wist-center-stack-center
     image: ${WIST_SPC}/wist-center:${CENTER_TAG}
@@ -139,7 +140,16 @@ services:
       WARP_INSIGHT_CENTER_SERVER_CERT_PATH: /wist-center/ca/control-center-server.crt
       WARP_INSIGHT_CENTER_SERVER_KEY_PATH: /wist-center/ca/control-center-server.key
     volumes:
-      - ${CENTER_CONFIG_DIR}:/wist-center
+      # 配置**按语义拆开挂**，而不是整目录 rw 挂到 /wist-center：
+      #   · 只读：wist-center.toml（含 `${SEC_*}` 占位，中心只读不改）
+      #   · 读写：state/（JSON store，未用 PG 时）、logs/（进程日志与轮转）
+      # 这样 compose 本身就把「哪些要写、哪些只读」声明清楚了：
+      # `gops sys perms` 能精确对齐成 0640/2770，而不会把配置也放宽成可写。
+      # 注意：`wist-center.toml` 是**文件**挂载，必须由 localize 先生成；
+      # 缺文件时 Docker 会把它建成同名**目录**（下一次 gx.tpl 渲染会失败，删掉目录重跑即可）。
+      - ${CENTER_CONFIG_DIR}/wist-center.toml:/wist-center/wist-center.toml:ro
+      - ${CENTER_CONFIG_DIR}/state:/wist-center/state
+      - ${CENTER_CONFIG_DIR}/logs:/wist-center/logs
       # 站点身份（dev/prod 共用，只读）：CA 证书 / 服务器证书 / 私钥 + 现场态 wist-center-pub.toml。
       # 从资源树（configs/）拆出（见 sys-prj.yml 的 contract / backup）—— 不可重建，
       # 不该跟渲染物一起被升级覆盖；容器只需读其中的 CA 证书（ca_cert_path）与现场态站点事实，故整目录只读挂入。

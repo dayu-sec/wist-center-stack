@@ -3,10 +3,10 @@
 #
 # 为什么需要它：wist* 镜像由发布流水线**双推** —— `ghcr.io/dayu-sec/*`（境外）与
 # `dy-sec.tencentcloudcr.com/cloud/*`（腾讯云 TCR，国内快），TCR 里本来就有；但
-# **victoria-metrics / wparse 是上游镜像**（`victoriametrics/victoria-metrics` 直接来自 Docker Hub，
-# wparse 默认 `ghcr.io/wp-labs/warp-parse`），TCR 里**没有**。内网 / 客户环境只方便拉 TCR 时，
+# **postgres / victoria-metrics 是上游镜像**（`docker.io/library/postgres`、
+# `quay.io/victoriametrics/victoria-metrics`），TCR 里**没有**。内网 / 客户环境只方便拉 TCR 时，
 # 用本脚本把它们也推进同一个 `cloud` 命名空间，再按末尾提示把 compose 的镜像源指过来即可
-# （wparse 走变量 `WPARSE_IMAGE`；VM 那行是写死的，要手工改成变量或直填 TCR 地址）。
+# （本栈三个源前缀都是变量：`PG_SPC` / `VM_SPC` / `WIST_SPC`）。
 #
 # 取镜像的**唯一源**是 `docker compose config --images` —— 让 Compose 自己解析 compose 里的
 # `${VAR}`（值来自 `sys/merged_vars.yml` 产品默认 + 栈根 `.env` 现场值），不在这里重造一份解析规则。
@@ -509,12 +509,12 @@ fi
 cat <<EOF
 ── 下一步：把 compose 的镜像源指过来 ──────────────────────────────
   compose 里三个源前缀都是变量（默认值见 sys/setting/vars.yml）：
-    WIST_SPC（wist-gateway / wist-gateway-web，默认 ghcr.io/dayu-sec）
-    WARP_SPC（warp-parse，默认 ghcr.io/wp-labs）
-    VM_SPC  （victoria-metrics，默认 victoriametrics）
+    WIST_SPC（wist-center / wist-center-web，默认 ghcr.io/dayu-sec）
+    PG_SPC  （postgres，默认 docker.io/library）
+    VM_SPC  （victoria-metrics，默认 quay.io/victoriametrics）
   要让它们拉 ${TARGET_REGISTRY} 的镜像，在 values/value.yml 覆盖后 \`gops sys localize\`（tag 不变）：
     WIST_SPC: ${TARGET_REGISTRY}
-    WARP_SPC: ${TARGET_REGISTRY}
+    PG_SPC:   ${TARGET_REGISTRY}
     VM_SPC:   ${TARGET_REGISTRY}
 
   目标仓库里实际推成的镜像（可直接 pull 校验）——已存在的会标注跳过：

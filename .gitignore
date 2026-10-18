@@ -35,6 +35,10 @@ values/*
 # 中心身份备份产物（含私钥，别入库）
 wist-center-backup-*.tar.gz
 
+# 开发态中心 home（`dev/svc.sh` 生成：含 admin token / TLS 私钥 / CA / 本地 JSON store）
+# —— 与发布态同性质，绝不入库（上面的 `/configs/` 是根路径锚定写法，盖不到 `dev/configs/`）。
+/dev/configs/
+
 # macOS
 .DS_Store
 .report

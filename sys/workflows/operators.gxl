@@ -9,8 +9,9 @@ mod operators {
   // 用 $(printenv XXX) 读。每个动作都**幂等**（存在即跳过）——证书/密钥绝不能每次重生成。
   flow localize {
     // 0) 确保运行期/身份目录存在（渲染目标落 configs/，站点身份落 identity/；Docker 会在 up 时
-    //    自建缺失的挂载源，但那时属主是 root，所以我们先建、随后 align-host-perms 归位）。
-    gx.cmd ( "mkdir -p configs/center configs/web identity/center" );
+    //    自建缺失的挂载源，但那时属主是 root，所以我们先建、随后由 `gops sys perms` 归位）。
+    //    拆挂后 configs/center **本身不再是挂载源**，但它仍必须由 localize 以部署账号创建。
+    gx.cmd ( "mkdir -p configs/center configs/web identity/center artifacts" );
     // ① 备料控制中心：CA（信任根 + 服务器证书，落站点身份 identity/center）+ 渲染值
     //    wist-center.value.json + 凭据密钥文件 `.wist/sec-value.yml`（缺什么补什么）。
     //    CA 已存在即跳过（换公章会让所有已分发信任根失效）。域名取合并后的值 CENTER_DOMAIN。
@@ -46,10 +47,15 @@ mod operators {
     );
     // ④ 宿主侧属主/权限对齐（Linux 专有；macOS/OrbStack 直接跳过）：
     //    center **固定以 999:999 运行**（compose 里显式钉死），而 Linux 的 bind 挂载**不改属主**
-    //    —— 未对齐就是稳定故障：容器写不出 state/ 与 artifacts/、读不到 identity/ 里的私钥。
+    //    —— 未对齐就是稳定故障：容器写不出 state/ 与 artifacts/、读不到 identity/ 里的私钥与
+    //    `.wist/sec-value.yml`（`${SEC_CENTER_*}` 解析失败）。
+    //    用 `gops sys perms --apply`（gops ≥ 2.7，本栈硬要求）：它从 `docker compose config`
+    //    派生「哪些挂载要写、哪些只读」，不需要本仓维护名单 —— 增减挂载只需改 compose。
+    //    必须放在 localize **最后**：上面的备料会新建文件（umask 可能使其对容器不可读）。
     //    还必须在 `docker compose up` **之前**：Docker 会把缺失的挂载源目录建成 root:root，
     //    属主一旦是 root，之后的部署账号就写不动了。
-    gx.cmd ( "./scripts/align-host-perms.sh" );
+    //    幂等：已对齐时不写盘、也不要任何权限；`gops sys perms --check` 可单独做只读自检。
+    gx.cmd ( "gops sys perms --help >/dev/null 2>&1 || { echo '错误：本栈需要 gops >= 2.7（gops sys perms）'; exit 1; }; gops sys perms --apply" );
   }
 
 }

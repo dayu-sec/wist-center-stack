@@ -84,7 +84,8 @@ system:
     value: http://victoria-metrics:8428
 
   # 挂载源路径（按部署环境摆放）
-  # 中心配置目录（渲染出 wist-center.toml），容器挂到 /wist-center。
+  # 中心配置目录（渲染出 wist-center.toml）。compose **只挂其中三块**：
+  # wist-center.toml（只读）、state/（读写）、logs/（读写）；value.json 是渲染源、不进容器。
   # 站点身份（CA / 服务器证书 / 私钥）**不在**这里：它在栈根 `identity/center/`（compose 里
   # 以字面量 `./identity/center` 挂到容器 /wist-center/ca），dev/prod 共用、整体作对外契约。
   - name: CENTER_CONFIG_DIR

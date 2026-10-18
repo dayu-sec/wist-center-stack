@@ -9,7 +9,7 @@
 # 落点（对齐 foundation/config-and-state-layout）：
 #   站点身份（CA / 服务器证书 / 私钥）→ 栈根 `identity/center/`（dev/prod 共用、整体作对外契约）；
 #     可用 env CENTER_IDENTITY_DIR 覆盖。它**不在**资源树（configs/）里，容器只读挂到 /wist-center/ca。
-#   渲染值 wist-center.value.json + store/logs → <配置目录>（configs/center，容器挂到 /wist-center）。
+#   渲染值 wist-center.value.json + store/logs → <配置目录>（configs/center，按语义拆挂到容器 /wist-center）。
 #   现场态（站点事实 public_url）分「声明 / 值」：**声明** `identity/center/wist-center-pub.toml`
 #     （只写 `${VAR}`）由 tpl 机制渲染（可重渲）；**值**在同目录 `.env`，由
 #     scripts/init-center-pub.sh 按缺补齐（升级 / 重渲永不覆盖）。
@@ -63,7 +63,7 @@ case "${DOMAIN}" in
     ;;
 esac
 
-mkdir -p "${IDENTITY_DIR}" "${CONFIG_DIR}/state" "${STACK_ROOT}/artifacts"
+mkdir -p "${IDENTITY_DIR}" "${CONFIG_DIR}/state" "${CONFIG_DIR}/logs" "${STACK_ROOT}/artifacts"
 
 # ── 1) 控制中心 CA（信任根 + 服务器证书）：缺失才生成，落站点身份目录 ──
 # control-center.pem 是分发给所有网关的信任根（control_center.trust_bundle）；
