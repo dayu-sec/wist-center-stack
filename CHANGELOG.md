@@ -3,6 +3,20 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.1.12-alpha] - 2026-10-18
+
+### 变更
+
+- **中心 / 前端镜像 tag 跟进**：`CENTER_TAG → v0.17.0-alpha`、`WEB_TAG → v0.10.0-alpha`。本轮：
+  - 中心：落库并暴露网关宿主依赖工具版本（`gateways.gops_version` / `gx_version`，幂等补列），
+    Prometheus 增 `gateway_gops_info` / `gateway_gx_info`。
+  - 前端：网关详情状态卡新增 `gops` / `gx` 两个读数（缺失为「—」）。
+- **`GATEWAY_IMAGE` 对齐 `v0.17.0-alpha`**（生成的网关安装命令用）。
+
+### 升级顺序
+
+- 先升 **网关（v0.17.0-alpha）**，再升本栈；gwlinkd 0.14 由中心推送升级。
+
 ## [0.1.11-alpha] - 2026-10-18
 
 ### 变更
