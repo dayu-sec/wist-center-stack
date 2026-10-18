@@ -36,7 +36,7 @@ system:
     value: v0.10.0-alpha
   # 观测镜像 tag（源前缀见 VM_SPC）
   - name: VM_TAG
-    value: v1.153.0
+    value: v1.154.0
 
   # 中心生成「网关安装命令」时用的网关镜像（写进渲染出的 wist-center.toml 的 [artifacts] gateway_image）。
   # 现场按实际网关栈镜像覆盖；默认值与 wist-gateway-stack 当前钉的版本对齐。

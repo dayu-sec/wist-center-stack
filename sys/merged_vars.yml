@@ -10,7 +10,7 @@ system:
 - name: WEB_TAG
   value: v0.10.0-alpha
 - name: VM_TAG
-  value: v1.153.0
+  value: v1.154.0
 - name: GATEWAY_IMAGE
   value: ghcr.io/dayu-sec/wist-gateway:v0.17.0-alpha
 - name: PG_TAG
