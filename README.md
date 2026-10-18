@@ -235,7 +235,8 @@ gops sys perms --apply    # 幂等修复
 ### 起来之后
 
 - 管理页面：`https://<CENTER_DOMAIN>:${WEB_PORT}`（如 `https://center.dev.wist.lab:18080`；用站点 CA `identity/center/control-center.pem` 校验）
-- 中心 API：`http://<host>:${CENTER_PORT}`
+- 中心 API：`https://<host>:${CENTER_PORT}`（compose 配了服务器证书 → 中心本身就是 **HTTPS**；
+  网关侧走 mTLS，浏览器/脚本可用 `-k` 或带站点 CA 校验证书）
 - 管理 token：见上「密钥」里的 `center_admin_token`
 - 起停与排查：
 
@@ -247,6 +248,27 @@ gops run stop
 
 > 别用裸 `docker compose up` 起栈：它绕过 `gops run start` 的 preflight（权限未对齐会直接拦住）
 > 和 `gops prj restore/upgrade` 的自动 `--apply`。
+
+#### 升级时端口被占（`failed to set up container networking: Bind for 0.0.0.0:443 failed`）
+
+`gops prj upgrade` 的 `up` 阶段会因端口冲突失败并触发回滚，而**回滚可能停在中间态**：
+文件已经换成新包，但失败的容器被留在**没有网络**的状态（`docker inspect` 里
+`.NetworkSettings.Networks` 为空）——此时再 `up` 会报「Container Started」却反复重启，
+日志是 `connect postgres … failed to lookup address information`（容器根本没接上网络，
+不是 Pg 的问题）。
+
+处置：先腾出端口，再**强制重建**（普通 `up` 不会修无网络的容器）：
+
+```bash
+gops run stop                     # 或停掉占用 443/8443 的另一个栈
+docker compose -f sys/docker-compose.yml --project-directory . up -d --force-recreate
+gops prj upgrade <sys> <version>  # 端口空着时重跑一次，把版本落账
+gops run status
+```
+
+`CENTER_PORT` / `WEB_PORT` 的**默认值（3100 / 18080）刻意避开了网关栈的 443 / 8443**；
+现场把它们改成 443 / 8443 后就**不能与网关栈同机同时运行**（本栈与 `wist-gateway-stack`
+共用固定容器名前缀，本就只允许一套）。
 
 ## 开发态（本地二进制）
 
