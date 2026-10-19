@@ -3,6 +3,49 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.2.0-alpha] - 2026-10-19
+
+### 新增
+
+- **WarpStation 规则管理 / 发布控制台**：`warp-station`（v0.2.14-alpha）+ 真实 WarpParse
+  工具链命名卷 + WarpStation Web（仅绑 `127.0.0.1:18081`）。`wparse__models` / `wparse__infra`
+  两个工作副本随 `configs/station` 落盘，版本化仍走外部私有 Git（git-only，不调 API）。
+- **Center Git Proxy**：nginx 只读反代 CNB 私有仓库的 smart HTTP 端点，CNB 读 token 只存在
+  Center；Gateway 不持有任何 CNB 凭据。默认端口 `18082`。
+- **Center wparse-proxy**：`[wparse_proxy]` 独立 HTTPS listener（容器 `3101` / 宿主 `18083`）+
+  PostgreSQL 命令队列。WarpStation 发布时经 Center → gwlinkd 短轮询 → 本机 wparse 管理面，
+  Gateway 仍然不开放任何入站控制端口。
+- **PG 分账号**：`center_app` 只连 `insight_demo`、`station_app` 只连 `wp-station`；
+  `scripts/db-init.sh` 幂等建库/建号，并做跨库连接自检（隔离失败直接报错）。
+- **`scripts/init-station.sh`**：生成 DB/Station 密钥、预克隆两个工作区、渲染 `station.env`
+  与 Git Proxy 配置，并产出 Gateway 对接片段。
+
+### 变更（组件版本）
+
+- `CENTER_TAG → v0.18.0-alpha`：新增规则发布兼容入口（wparse-proxy）、proxy token
+  签发/轮换/撤销、mTLS 命令通道、发布请求校验与队列保护。
+- 新增端口：`STATION_PORT=18081`、`GIT_PROXY_PORT=18082`、`WPARSE_PROXY_PORT=18083`
+  （均可在 `values/value.yml` 覆盖）。
+
+### 修复
+
+- **WarpStation 校验/发布临时目录**：给 `/app/tmp` 挂 tmpfs（1777），修复
+  `Permission denied (os error 13)`。
+- **容器解析 Center 域名**：`warp-station` 加 `extra_hosts`，避免宿主 hosts 把域名指到
+  `127.0.0.1` 时容器 clone 到自己。
+- **`dev/svc.sh` 端口兜底误杀**：端口清理现在必须匹配目标进程特征；不再把容器端口转发
+  （OrbStack / Docker Desktop helper）当成 dev 进程杀掉。
+
+### 文档
+
+- README 补充 WarpStation / Git Proxy / wparse-proxy 的链路、端口、密钥边界与安全待办；
+  说明 `values/value.yml` 只放现场覆盖值、密钥仍走 `.wist/sec-value.yml`。
+
+### 说明
+
+- `sys/sandbox/`（沙盒容器原型）随仓保留，但 v1 编排**未启用**；WarpStation 目前直接执行
+  真实工具链（开发态用 `WARP_STATION_SKIP_SANDBOX=1`，生产启用前需去掉）。
+
 ## [0.1.16-alpha] - 2026-10-18
 
 ### 变更（组件版本）
