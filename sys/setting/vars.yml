@@ -9,15 +9,19 @@
 #
 # 说明：
 #   - 只有 `system:` 段的变量会进入 resolved_vars.yml 并最终导出到 .env；
-#   - 密钥不要写在这里：本栈凭据（admin token / hmac secret）落栈根 `.wist/sec-value.yml`，
-#     由 `scripts/init-center.sh` 生成、compose 只读挂进 center 容器，配置里只留 `${SEC_xxx}` 占位；
-#     其它密钥如需，仍可用 `${SEC_xxx}` 占位、由 `gops run start` 注入、不落盘。
+#   - 密钥不要写在这里：
+#       · center admin token / hmac secret / DB app 密码 / Git 读写 token → 栈根 `.wist/sec-value.yml`；
+#       · 由 scripts/init-*.sh 生成/读取，再写进配置或 `*.env`（compose env_file）；
+#       · compose 里仍可用 `${SEC_xxx}` 占位，由 `gops run start` 注入。
 #   - 容器内端口/路径/服务名是应用契约，直接写在 sys/docker-compose.yml 里。
 system:
   # 镜像源前缀：各自独立，可分别指向不同 registry（内网 / 镜像源逐项覆盖）
-  #   WIST_SPC：中心后端 / 前端（wist-center / wist-center-web）
-  #   VM_SPC  ：VictoriaMetrics（观测）
-  #   PG_SPC  ：PostgreSQL（中心存储）
+  #   WIST_SPC   ：中心后端 / 前端镜像
+  #   VM_SPC     ：VictoriaMetrics（观测）
+  #   PG_SPC     ：PostgreSQL（中心存储）
+  #   STATION_SPC：WarpStation（规则管理 / 发布控制台）
+  #   WARP_SPC   ：WarpParse（工具链基镜像）
+  #   NGINX_SPC  ：Center Git Proxy（nginx）
   - name: WIST_SPC
     value: ghcr.io/dayu-sec
 
@@ -27,16 +31,37 @@ system:
   - name: PG_SPC
     value: docker.io/library
 
+  - name: STATION_SPC
+    value: ghcr.io/wp-labs
+
+  - name: WARP_SPC
+    value: ghcr.io/wp-labs
+
+  - name: NGINX_SPC
+    value: docker.io/library
+
   # 镜像 tag：中心后端与前端各自独立发版，tag 分开；需要钉版本时改这里。
   #   CENTER_TAG 对应 wist-center 的 release tag（v0.17.2-alpha）
   #   WEB_TAG    对应 wist-center-web 的 release tag（v0.10.2-alpha）
   - name: CENTER_TAG
-    value: v0.17.2-alpha
+    value: v0.18.0-alpha
   - name: WEB_TAG
     value: v0.10.2-alpha
   # 观测镜像 tag（源前缀见 VM_SPC）
   - name: VM_TAG
     value: v1.154.0
+
+  # 规则管理 / 发布控制台。
+  #   STATION_TAG：WarpStation 的 release tag（上游 v0.2.14-alpha 起支持 models/infra 双仓库）。
+  #   WARPPARSE_TAG：工具链基镜像版本，**必须与 Gateway 的 WPARSE_TAG 对齐**；
+  #                 它只用于 WarpStation 的 wparse/wpgen/wproj，不参与线上数据面运行。
+  - name: STATION_TAG
+    value: v0.2.14-alpha
+  - name: WARPPARSE_TAG
+    value: 0.30.0-alpha
+  # Git Proxy 镜像（官方 nginx；固定小版本，定期跟随安全更新）。
+  - name: NGINX_TAG
+    value: 1.27-alpine
 
   # 中心生成「网关安装命令」时用的网关镜像（写进渲染出的 wist-center.toml 的 [artifacts] gateway_image）。
   # 现场按实际网关栈镜像覆盖；默认值与 wist-gateway-stack 当前钉的版本对齐。
@@ -56,6 +81,16 @@ system:
     value: 55432
   - name: VM_PORT
     value: 28429
+  # WarpStation 控制台（自带前端 + API）。
+  - name: STATION_PORT
+    value: 18081
+  # Center Git Proxy：Gateway 的 wparse 从这里拉取 CNB 仓库。
+  # 必须对 **Gateway 主机** 可达。
+  - name: GIT_PROXY_PORT
+    value: 18082
+  # Center wparse-proxy：WarpStation 调 wparse 管理面的兼容入口。
+  - name: WPARSE_PROXY_PORT
+    value: 18083
 
   # 指标保留期（月）与时区
   - name: RETENTION_PERIOD
@@ -68,10 +103,9 @@ system:
   - name: CENTER_DOMAIN
     value: center.example.com
 
-  # 中心存储 PostgreSQL（容器网络内服务名 postgres）。这三个值同时用于：compose 里 postgres
-  # 容器的 POSTGRES_* 环境，以及 scripts/init-center.sh 生成的 DSN（database_url）。
-  # 生产环境请改这里并走密钥（当前默认 demo/demo 仅用于开发/测试态，与 wist-center 自带
-  # docker-compose.yml 一致）。
+  # 中心存储 PostgreSQL（容器网络内服务名 postgres）。
+  # PG_USER / PG_PASSWORD 是 **bootstrap superuser**，只用于建库/迁移/备份，不用于应用。
+  # app 账号在 scripts/init-*.sh 里生成：center_app / station_app。
   - name: PG_USER
     value: demo
   - name: PG_PASSWORD
@@ -79,22 +113,65 @@ system:
   - name: PG_DB
     value: insight_demo
 
+  # WarpStation 独立库。账号 station_app 由 db-init 创建，密码在 .wist。
+  - name: STATION_DB_NAME
+    value: wp-station
+
+  # 外部 Git 仓库（私有，已存在）。WarpStation 用 git 命令读写，不依赖任何 Git 服务的 API。
+  #   STATION_MODELS_REPO_URL / STATION_INFRA_REPO_URL：预克隆与 push 的远端（必须同主机）；
+  #   WP_GIT_BASE_URL：WarpStation [gitea].base_url 占位；留空 = 从两个 repo URL 推导；
+  #   WP_GIT_PUSH_USER / WP_GIT_PUB_USER：写/读账号（可被 .wist 的 wp_git_*_user 覆盖）；
+  #   token 不放这里：.wist/sec-value.yml 的 wp_git_push_token / wp_git_pub_token。
+  - name: STATION_MODELS_REPO_URL
+    value: https://cnb.cool/dy-sec/jingang-cust/wist/wp-rules
+  - name: STATION_INFRA_REPO_URL
+    value: https://cnb.cool/dy-sec/jingang-cust/wist/wp-infra
+  - name: WP_GIT_BASE_URL
+    value: ''
+  - name: WP_GIT_PUSH_USER
+    value: ''
+  - name: WP_GIT_PUB_USER
+    value: ''
+  - name: STATION_LOG_LEVEL
+    value: info
+
+  # 外部 Git 上游的鉴权 header（默认 Basic Authorization；Bearer/自定义时改名字）。
+  - name: WP_GIT_AUTH_HEADER
+    value: Authorization
+  # 可选：Git Proxy 的客户端 IP allowlist（CIDR，逗号分隔；空 = 放开）。
+  # 上线前建议至少填 Gateway 主机网段。
+  - name: GIT_PROXY_ALLOW_CIDR
+    value: ''
+
+  # Gateway 侧 wparse 的 Git 拉取基址（写进 init-station.sh 生成的对接片段）。
+  # **Gateway 主机视角**：留空 = 自动取 `https://${CENTER_DOMAIN}:${GIT_PROXY_PORT}`；
+  # 如果 Gateway 走另一条网络/域名访问 Center，再在 values/ 里显式覆盖。
+  - name: GIT_PROXY_PUBLIC_BASE
+    value: ''
+
   # 中心查询/推送时序库的地址（容器内服务名 victoria-metrics）。
   - name: VICTORIA_METRICS_URL
     value: http://victoria-metrics:8428
 
   # 挂载源路径（按部署环境摆放）
-  # 中心配置目录（渲染出 wist-center.toml）。compose **只挂其中三块**：
-  # wist-center.toml（只读）、state/（读写）、logs/（读写）；value.json 是渲染源、不进容器。
-  # 站点身份（CA / 服务器证书 / 私钥）**不在**这里：它在栈根 `identity/center/`（compose 里
-  # 以字面量 `./identity/center` 挂到容器 /wist-center/ca），dev/prod 共用、整体作对外契约。
   - name: CENTER_CONFIG_DIR
     value: ./configs/center
-  # 制品镜像目录：版本发布时下载/镜像下来的安装包落这里。
-  # **与 configs/ 分开**（configs 里是生成的身份/密钥，制品是可重拉的数据），便于单独备份。
-  # 容器内挂到 /wist-center/artifacts（模板里 [artifacts] dir = "artifacts"）。
   - name: CENTER_ARTIFACT_DIR
     value: ./artifacts
+  # WarpStation 运行期目录（**落在 configs/ 下**：不入库 / 不进包 / 纳入 gops prj backup）。
+  - name: STATION_CONFIG_DIR
+    value: ./configs/station
+  # WarpStation v0.2.14 的固定双系统布局：<cwd>/gitea/{wparse,wfusion}__{models,infra}
+  # CNB 的两个仓库分别落到 wparse__models / wparse__infra。
+  - name: STATION_GITEA_ROOT_DIR
+    value: ./configs/station/gitea
+  - name: STATION_PROJECT_MODELS_DIR
+    value: ./configs/station/gitea/wparse__models
+  - name: STATION_PROJECT_INFRA_DIR
+    value: ./configs/station/gitea/wparse__infra
+  # Git Proxy 配置目录（nginx.conf 渲染物）。
+  - name: GIT_PROXY_CONFIG_DIR
+    value: ./configs/git-proxy
   # 前端站点配置：由 sys/configs/web/nginx.conf.tpl 在 localize 时渲染到此（运行物，不入库）
   - name: WEB_NGINX_CONF
     value: ./configs/web/nginx.conf

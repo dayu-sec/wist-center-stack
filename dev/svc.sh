@@ -104,7 +104,7 @@ down_center() {
 down_web() {
   require_cmd lsof
   require_cmd python3
-  stop_service "wist-center-web" "${WEB_PID_FILE}" "$(web_port)" "npm"
+  stop_service "wist-center-web" "${WEB_PID_FILE}" "$(web_port)" "npm" "npm|node|vite|esbuild"
 }
 
 # ── status / token ──────────────────────────────────────────────────────────

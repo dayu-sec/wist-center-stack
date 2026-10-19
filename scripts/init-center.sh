@@ -126,18 +126,59 @@ import re, secrets, sys
 path = sys.argv[1]
 with open(path) as handle:
     text = handle.read()
-for key in ("center_admin_token", "center_hmac_secret"):
+# center_admin_token / center_hmac_secret：中心自身凭据；
+# center_db_password：center_app 的 PG 密码（db-init 与 center DSN 共用）。
+for key, prefix in (("center_admin_token", ""), ("center_hmac_secret", ""), ("center_db_password", "c")):
     if re.search(rf"(?m)^\s*{key}\s*:", text):
         print(f"  复用已有 {key}：{path}")
         continue
     if text and not text.endswith("\n"):
         text += "\n"
-    text += f"{key}: {secrets.token_hex(24)}\n"
+    value = f"{prefix}{secrets.token_hex(24)}" if prefix else secrets.token_hex(24)
+    text += f"{key}: {value}\n"
     print(f"  已在密钥文件写入 {key}：{path}")
 with open(path, "w") as handle:
     handle.write(text)
 PY
 chmod 600 "${SEC_FILE}"
+
+CENTER_DB_PASSWORD="$(sed -n 's/^[[:space:]]*center_db_password:[[:space:]]*//p' "${SEC_FILE}" | head -n1 | tr -d '\r')"
+case "${CENTER_DB_PASSWORD}" in
+  '""' | "''") CENTER_DB_PASSWORD="" ;;
+  \"*\") CENTER_DB_PASSWORD="${CENTER_DB_PASSWORD#\"}"; CENTER_DB_PASSWORD="${CENTER_DB_PASSWORD%\"}" ;;
+  \'*\') CENTER_DB_PASSWORD="${CENTER_DB_PASSWORD#\'}"; CENTER_DB_PASSWORD="${CENTER_DB_PASSWORD%\'}" ;;
+esac
+[[ -n "${CENTER_DB_PASSWORD}" ]] || {
+  echo "错误：${SEC_FILE} 里没有 center_db_password" >&2
+  exit 1
+}
+
+# 纯数字密码会被 WarpStation 的 config crate（try_parsing）当成整数；中心侧虽不走 config crate，
+# 但统一约束，避免运维把同一类密码复制到 station。
+case "${CENTER_DB_PASSWORD}" in
+  *[!0-9]*) ;;
+  *)
+    echo "错误：center_db_password 是纯数字；请改成含字母的值（.wist/sec-value.yml）" >&2
+    exit 1
+    ;;
+esac
+
+# db-schema / 中心连接使用的 app 账号（db-init 创建并收紧权限）。
+CENTER_ENV="${CONFIG_DIR}/center.env"
+tmp_env="$(mktemp "${CONFIG_DIR}/.center.env.XXXXXX")"
+cat >"${tmp_env}" <<EOF
+PGUSER=center_app
+PGPASSWORD=${CENTER_DB_PASSWORD}
+PGDATABASE=${PG_DB}
+EOF
+chmod 600 "${tmp_env}"
+if [[ -f "${CENTER_ENV}" ]] && cmp -s "${tmp_env}" "${CENTER_ENV}"; then
+  rm -f "${tmp_env}"
+  note "center.env 无变化：${CENTER_ENV}"
+else
+  mv -f "${tmp_env}" "${CENTER_ENV}"
+  note "已写 center.env（600）：${CENTER_ENV}"
+fi
 
 # ── 3) 渲染值 value.json（gx.tpl 的输入）──
 # 必须落在脚本里，不能在 operators.gxl 里 printf：GXL 字符串不做转义还原，且 /bin/sh 可能是 dash
@@ -146,7 +187,7 @@ VALUE_JSON="${CONFIG_DIR}/wist-center.value.json"
 tmp="$(mktemp "${CONFIG_DIR}/.wist-center.value.XXXXXX")"
 cat >"${tmp}" <<EOF
 {
-  "database_url": "postgres://${PG_USER}:${PG_PASSWORD}@postgres:5432/${PG_DB}",
+  "database_url": "postgres://center_app:${CENTER_DB_PASSWORD}@postgres:5432/${PG_DB}",
   "store_path": "state/warp-insight-center-store.json",
   "victoriametrics_url": "${VICTORIA_METRICS_URL}",
   "ca_cert_path": "/wist-center/ca/control-center.pem",

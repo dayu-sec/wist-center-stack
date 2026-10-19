@@ -1,28 +1,30 @@
-# wist-center-stack — 中心后端(wist-center) + 管理前端(wist-center-web) + 观测 一站式编排
+# wist-center-stack — 中心后端(wist-center) + 管理前端(wist-center-web) + 观测 + 规则发布 一站式编排
 #
 # 端口约定（宿主:容器；宿主端口的值见 sys/setting/vars.yml，现场在 values/value.yml 覆盖）：
-#   center           ${CENTER_PORT}:3100   中心后端 HTTPS+mTLS API（默认 3100；服务端证书 + 校网关客户端证书）
-#   web              ${WEB_PORT}:443       前端入口（nginx **终止 TLS** + 静态 + /api 反代；默认 18080）
-#   postgres         ${PG_PORT}:5432       中心存储 PgStore（默认 55432）
-#   victoria-metrics ${VM_PORT}:8428       指标/历史时序（默认 28429）
-#   db-schema        无端口               一次性：每次 start 幂等套一遍 sys/db/initdb/01_schema.sql
-#                                          （center 等它成功才起；见该服务注释）
+#   center           ${CENTER_PORT}:3100       中心后端 HTTPS+mTLS API
+#   center           ${WPARSE_PROXY_PORT}:3101 规则发布兼容入口（中心实现后生效，见设计文档 §6）
+#   web              ${WEB_PORT}:443           前端入口（nginx 终止 TLS + 静态 + /api 反代）
+#   postgres         ${PG_PORT}:5432           中心存储
+#   victoria-metrics ${VM_PORT}:8428           指标/历史时序
+#   warp-station     ${STATION_PORT}:8081      规则管理 / 发布控制台（自带前端 + API；**仅绑回环**，见下）
+#   git-proxy        ${GIT_PROXY_PORT}:8443    Gateway 只读拉取 CNB 的 Git 反代
 #
-# 容器内端口是**应用契约**，写死（3100/443/5432/8428）；宿主端口才是变量 —— 两边不要写混。
+# 一次性任务（无端口）：
+#   db-init                以 db_admin 幂等创建 center_app / station_app 角色与库，收紧 CONNECT
+#   db-schema              以 center_app 幂等套一遍 sys/db/initdb/01_schema.sql
+#   warp-toolchain         把 wparse/wpgen/wproj 复制进命名卷（WarpStation 直接执行；v1 单容器）
+#
+# 容器内端口是**应用契约**，写死（3100/3101/443/5432/8428/8081/8443）；宿主端口才是变量。
 #
 # 值来源（gops 系统约定）：
 #   - 随环境/客户变化的量（镜像源与 tag、宿主端口、域名、挂载路径）统一用 Compose 原生 `${VAR}`
 #     占位，定义在 sys/setting/vars.yml；`gops sys update` → sys/merged_vars.yml，
 #     `gops sys localize` → 栈根 .env。现场覆盖写 values/value.yml（该文件版本化）。
-#   - 密钥（admin token / hmac secret）走栈根 `.wist/sec-value.yml`（密钥文件，只读挂进
-#     center 容器），配置里只留 `${SEC_xxx}` 占位、不落盘；键：center_admin_token / center_hmac_secret。
-#     其它密钥如需，仍可用 `${SEC_xxx}` 占位、由 `gops run start` 注入、不落盘。
-#   - 容器内端口/路径/服务名是应用契约，直接写在这里。
+#   - 密钥走栈根 `.wist/sec-value.yml`（只读挂进需要它的容器 / 由 localize 渲染进配置）：
+#     center_admin_token / center_hmac_secret / center_db_password /
+#     station_db_password / wp_git_push_token / wp_git_pub_token。
 #
-# 与 wist-center 自带 docker-compose.yml 的关系：那份只含第三/依赖（postgres + victoriametrics），
-# 供中心源码开发用；本份是**发布态**整栈编排（含 center/web），起停走 `gops run`。
-#
-# 单实例保障：四个服务都钉**固定 `container_name`**（不是 compose 默认的 `<项目>-<服务>-1`）。
+# 单实例保障：所有服务都钉**固定 `container_name`**（不是 compose 默认的 `<项目>-<服务>-1`）。
 # 为什么必须钉：默认名里带项目名，而项目名默认取目录名 —— 两份同名目录的栈会共用同一批容器名，
 # 第二个 `up` 不会报错，而是**悄悄接管/顶掉**第一个的容器。钉死后第二个栈的 `up` 会当场报名字冲突。
 
@@ -30,8 +32,7 @@ services:
   # ── 中心存储：PostgreSQL（PgStore）──
   #
   # 表结构由 ${PG_INITDB_DIR}/01_schema.sql 在**首次**初始化数据卷时建立
-  # （docker-entrypoint-initdb.d 只在空 data 目录时执行）。库里是网关注册表 / 凭据 / 状态快照。
-  # 说明：库结构与 `wist-center/docker/initdb/01_schema.sql` 同源，改中心 schema 时两处要同步。
+  # （docker-entrypoint-initdb.d 只在空 data 目录时执行），之后由 db-schema（center_app）幂等补齐。
   postgres:
     container_name: wist-center-stack-postgres
     image: ${PG_SPC}/postgres:${PG_TAG}
@@ -52,14 +53,13 @@ services:
       timeout: 5s
       retries: 12
 
-  # ── 库结构应用（一次性）：让**既有数据卷**也能拿到 schema 新增列 ──
+  # ── PG 角色/库隔离（一次性，v1 必做：设计文档 §9.7 / R3）──
   #
-  # 为什么需要：`docker-entrypoint-initdb.d` **只在空 data 卷首次初始化时**执行，之后
-  # `sys/db/initdb/01_schema.sql` 的改动（新增列）根本到不了已有库 —— 中心会因写不出的列报 SQL 错。
-  # 该文件全是 `CREATE/ALTER … IF NOT EXISTS`（幂等），所以每次 start 都套一遍是安全的。
-  # `center` 依赖它 `service_completed_successfully`：schema 应用失败就不让中心带旧表结构起来。
-  db-schema:
-    container_name: wist-center-stack-db-schema
+  # center_app 只连 insight_demo；station_app 只连 wp-station；两者都不是 superuser。
+  # db_admin（PG_USER）只用于 bootstrap / 本服务 / 备份。
+  # 既有现场：把 db_admin 名下对象 REASSIGN 给 app 账号，再收紧 CONNECT/TEMPORARY。
+  db-init:
+    container_name: wist-center-stack-db-init
     image: ${PG_SPC}/postgres:${PG_TAG}
     restart: "no"
     depends_on:
@@ -69,7 +69,31 @@ services:
       PGHOST: postgres
       PGUSER: ${PG_USER}
       PGPASSWORD: ${PG_PASSWORD}
-      PGDATABASE: ${PG_DB}
+      PGDATABASE: postgres
+      CENTER_DB_NAME: ${PG_DB}
+      STATION_DB_NAME: ${STATION_DB_NAME}
+      SEC_FILE: /secrets/sec-value.yml
+    volumes:
+      - ./scripts/db-init.sh:/db-init.sh:ro
+      - ./.wist:/secrets:ro
+    entrypoint: ["/bin/bash", "/db-init.sh"]
+
+  # ── 库结构应用（一次性）：让**既有数据卷**也能拿到 schema 新增列 ──
+  #
+  # docker-entrypoint-initdb.d **只在空 data 卷首次初始化时**执行；该文件全是
+  # `CREATE/ALTER … IF NOT EXISTS`（幂等），所以每次 start 都套一遍是安全的。
+  # 以 center_app 连接：schema 对象归 app 账号所有，不再使用 superuser。
+  db-schema:
+    container_name: wist-center-stack-db-schema
+    image: ${PG_SPC}/postgres:${PG_TAG}
+    restart: "no"
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    env_file:
+      - ${CENTER_CONFIG_DIR}/center.env
+    environment:
+      PGHOST: postgres
     volumes:
       - ${PG_INITDB_DIR}:/schema:ro
     entrypoint:
@@ -109,18 +133,12 @@ services:
   #
   # 配置与密钥**卷挂载注入**，不烘焙进镜像：${CENTER_CONFIG_DIR}（渲染出的 wist-center.toml + state/logs）
   # 按语义**拆开挂**到容器 /wist-center（见下面 volumes），容器内 WIST_CENTER_CONFIG 指向主配置。
-  # 站点身份（CA / 服务器证书 / 私钥）**不在 configs/ 里**：它在栈根 `identity/center/`（dev/prod 共用、
-  # 整体作对外契约），只读挂到容器 /wist-center/ca（模板 ca_cert_path 指向 /wist-center/ca/control-center.pem）。
-  # 密钥（admin token / hmac secret）不落配置：配置里写 `${SEC_*}`，由 WIST_CENTER_SEC_FILE
-  # 指向的密钥文件（./.wist/sec-value.yml）解析。
-  # 制品镜像**另挂** ${CENTER_ARTIFACT_DIR} → /wist-center/artifacts（模板里 dir = "artifacts"）：
-  # 与 configs/ 分开（一个是密钥、一个是可重拉数据），备份分级互不牵连。
-  # 容器内 listen_addr 由模板写成 0.0.0.0:3100（代码默认 127.0.0.1:3100，端口映射不进来）。
-  # 中心**开服务端 TLS，并校网关客户端证书（mTLS）**：网关直连 3100，靠客户端证书认人
-  #（客户端证书**可选** —— 首注册的网关还没有证书；无证书不等于未鉴权，应用层再判）。
-  # 管理面浏览器走 web 容器的 TLS 终止（见下）；web → center 这一跳也走 https。
-  # 运行身份 999:999（镜像里 `useradd -r wist`）；宿主侧由 `gops sys perms` 对齐（gops ≥ 2.7，本栈硬要求），
-  # 它从本文件的 `user:` + `volumes.read_only` 派生，不需要本仓另维护名单。
+  # 站点身份（CA / 服务器证书 / 私钥）**不在 configs/ 里**：它在栈根 `identity/center/`。
+  # 密钥（admin token / hmac secret）不落配置：配置里写 `${SEC_*}`，由 WIST_CENTER_SEC_FILE 解析。
+  # 运行身份 999:999；宿主侧由 `gops sys perms` 对齐。
+  #
+  # 3101 是规则发布兼容入口（wparse-proxy）：中心实现 listener 后即可用；未实现时该端口
+  # 只是有映射、无监听，不影响中心启动。见设计文档 §6。
   center:
     container_name: wist-center-stack-center
     image: ${WIST_SPC}/wist-center:${CENTER_TAG}
@@ -128,61 +146,171 @@ services:
     restart: unless-stopped
     environment:
       WIST_CENTER_CONFIG: /wist-center/wist-center.toml
-      # 站点事实（现场态）：与主配置**分文件** —— 声明（只写 `${VAR}`，可重渲）+ 同目录 `.env`（值，永不重渲）。
-      # 声明在身份目录里（挂到 /wist-center/ca），不在主配置同目录，所以**显式指定**；
-      # 值 `.env` 挨着声明（/wist-center/ca/.env），按约定自动解析，无需另设。
       WIST_CENTER_PUB_CONFIG: /wist-center/ca/wist-center-pub.toml
-      # admin_token / hmac_secret 从密钥文件读（不落配置）：模板里写 `${SEC_CENTER_*}`。
       WIST_CENTER_SEC_FILE: /secrets/sec-value.yml
-      # 服务端 TLS 证书/私钥：**成对**配才起 HTTPS（中心用它对外；网关的 trust_bundle = 签它的 CA-S）。
-      # 都在只读挂入的 /wist-center/ca（= 站点身份 identity/center/）。
-      # 网关客户端 CA（CA-G）不用另设：中心默认取同目录的 gateway-client-ca.{pem,key.pem}。
       WARP_INSIGHT_CENTER_SERVER_CERT_PATH: /wist-center/ca/control-center-server.crt
       WARP_INSIGHT_CENTER_SERVER_KEY_PATH: /wist-center/ca/control-center-server.key
     volumes:
-      # 配置**按语义拆开挂**，而不是整目录 rw 挂到 /wist-center：
-      #   · 只读：wist-center.toml（含 `${SEC_*}` 占位，中心只读不改）
-      #   · 读写：state/（JSON store，未用 PG 时）、logs/（进程日志与轮转）
-      # 这样 compose 本身就把「哪些要写、哪些只读」声明清楚了：
-      # `gops sys perms` 能精确对齐成 0640/2770，而不会把配置也放宽成可写。
-      # 注意：`wist-center.toml` 是**文件**挂载，必须由 localize 先生成；
-      # 缺文件时 Docker 会把它建成同名**目录**（下一次 gx.tpl 渲染会失败，删掉目录重跑即可）。
       - ${CENTER_CONFIG_DIR}/wist-center.toml:/wist-center/wist-center.toml:ro
       - ${CENTER_CONFIG_DIR}/state:/wist-center/state
       - ${CENTER_CONFIG_DIR}/logs:/wist-center/logs
-      # 站点身份（dev/prod 共用，只读）：CA 证书 / 服务器证书 / 私钥 + 现场态 wist-center-pub.toml。
-      # 从资源树（configs/）拆出（见 sys-prj.yml 的 contract / backup）—— 不可重建，
-      # 不该跟渲染物一起被升级覆盖；容器只需读其中的 CA 证书（ca_cert_path）与现场态站点事实，故整目录只读挂入。
       - ./identity/center:/wist-center/ca:ro
-      # 密钥目录（只读）：中心用 WIST_CENTER_SEC_FILE 读里面的 `sec-value.yml` 解析 `${SEC_*}`。
-      # 挂**目录**而非文件：源缺失时 Docker 只是建出 `.wist/` 目录（本就 gitignore），
-      # 不会把 `sec-value.yml` 建成同名目录让报错变得难懂。文件由 scripts/init-center.sh 生成。
       - ./.wist:/secrets:ro
       - ${CENTER_ARTIFACT_DIR}:/wist-center/artifacts
     ports:
       - "${CENTER_PORT}:3100"
+      - "${WPARSE_PROXY_PORT}:3101"
     depends_on:
       postgres:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
       db-schema:
         condition: service_completed_successfully
       victoria-metrics:
         condition: service_healthy
 
+  # ── 规则管理：WarpStation + 工具链 + Git Proxy ──
+  #
+  # v1 先按**单容器**跑通：WarpStation 直接执行真实 wparse/wpgen/wproj。
+  # 沙盒拆容器（无网络/无密钥 worker）作为后续安全加固项，**v1 不启用**；
+  # 对应源码保留在 `sys/sandbox/`，但本编排不引用。
+  #
+  # 这一组服务与中心后端**解耦**：中心挂了不影响规则维护，反之亦然。
+  #   · 规则/配置主数据源是 **gitea/wparse__models 与 gitea/wparse__infra** 两个工作区
+  #     （落在 configs/station 下，随 configs/ 一起备份）；版本化走外部 CNB 私有仓库（git-only）。
+  #   · WarpStation 发布时调 **Center wparse-proxy**；Center → gwlinkd → 本机 wparse admin API。
+  #   · Gateway 的 wparse 通过 git-proxy 拉取 CNB；CNB 凭据只在 Center。
+
+  # 一次性：把 WarpParse 工具链复制进共享命名卷，供 WarpStation 直接执行。
+  # 版本变量 WARPPARSE_TAG **必须与 Gateway 的 WPARSE_TAG 对齐**。
+  # 命名卷默认 root:root；复制服务用 root 写入，WarpStation 以 999 只读挂载。
+  warp-toolchain:
+    container_name: wist-center-stack-warp-toolchain
+    image: ${WARP_SPC}/warp-parse:${WARPPARSE_TAG}
+    restart: "no"
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        mkdir -p /toolchain
+        for bin in wparse wpgen wproj; do
+          cp -f "/usr/local/bin/$$bin" "/toolchain/$$bin"
+          chmod 0755 "/toolchain/$$bin"
+        done
+        echo "warp toolchain ready: /toolchain"
+    volumes:
+      - station-toolchain:/toolchain
+
+  # CNB 只读 Git 反代（nginx）。
+  # 路径白名单只在 nginx.conf.tpl 里维护；nginx.conf 由 localize 渲染（600，含 CNB 读凭据）。
+  # 复用中心服务器证书；Gateway 用 Center CA 校验。客户端认证本期放开（TODO），
+  # 可选 GIT_PROXY_ALLOW_CIDR 做 IP allowlist。
+  git-proxy:
+    container_name: wist-center-stack-git-proxy
+    image: ${NGINX_SPC}/nginx:${NGINX_TAG}
+    restart: unless-stopped
+    read_only: true
+    volumes:
+      - ${GIT_PROXY_CONFIG_DIR}/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./identity/center/control-center-server.crt:/certs/server.crt:ro
+      - ./identity/center/control-center-server.key:/certs/server.key:ro
+    tmpfs:
+      - /var/cache/nginx:rw,noexec,nosuid,size=16m
+      - /var/run:rw,noexec,nosuid,size=1m
+      - /var/log/nginx:rw,noexec,nosuid,size=16m
+      - /tmp:rw,noexec,nosuid,size=16m
+    ports:
+      - "${GIT_PROXY_PORT}:8443"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8443 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # 规则管理 / 发布控制台。
+  # 运行身份固定 999:999（与 center / wparse 一致），宿主 bind 挂载权限由 `gops sys perms` 对齐。
+  # v1：主容器直接持有 CNB 写 token / DB 凭据，也直接执行真实工具链（单容器）。
+  # config.toml 只读挂载（DB 密码在渲染时写入）；CNB token 走 station.env（env_file）。
+  warp-station:
+    container_name: wist-center-stack-warp-station
+    image: ${STATION_SPC}/wp-station:${STATION_TAG}
+    user: "999:999"
+    restart: unless-stopped
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      warp-toolchain:
+        condition: service_completed_successfully
+    env_file:
+      - ${STATION_CONFIG_DIR}/station.env
+    environment:
+      # 运行期覆盖：值来源仍是 config.toml，这里只钉容器内地址/路径。
+      # HOME 必须是容器内可写目录：/app 是 root:root 755，镜像里的 999 写不了；
+      # 下面的 `git config --global` 要落 $HOME/.gitconfig。
+      HOME: /tmp
+      WP_STATION__DATABASE__HOST: postgres
+      WP_STATION__DATABASE__PORT: "5432"
+      WP_STATION__DATABASE__NAME: ${STATION_DB_NAME}
+      WP_STATION__DATABASE__USERNAME: station_app
+      WP_STATION__ASSIST__BASE_URL: ""
+      WP_STATION__FEATURES__DATA_COLLECT_URL: ""
+      WP_STATION__WARPARSE__CA_FILE: /app/tls/CA.crt
+      # TODO(dev-only): 开发态跳过沙盒验证，先把发布链路跑通。
+      # 生产必须去掉（沙盒是“先验后发”的唯一门槛）。
+      WARP_STATION_SKIP_SANDBOX: "1"
+    volumes:
+      - ${STATION_CONFIG_DIR}/config.toml:/app/config/config.toml:ro
+      # v0.2.14 固定布局：/app/gitea/{wparse,wfusion}__{models,infra}
+      # CNB 工作副本在 wparse__models / wparse__infra；wfusion__* 由 WarpStation 自动补齐。
+      - ${STATION_GITEA_ROOT_DIR}:/app/gitea
+      # 真实工具链（wparse/wpgen/wproj）：由 warp-toolchain 一次性复制进命名卷。
+      - station-toolchain:/app/toolchain:ro
+      # WarpStation 调 Center wparse-proxy 时预加载的信任根（默认 = 中心 CA）。
+      - ./identity/station/warparse-ca.pem:/app/tls/CA.crt:ro
+    ports:
+      # **必须绑回环**：wp-station 的 API 没有鉴权中间件（登录只发 token，后端不校验），
+      # 暴露到非回环等于把规则库/发布/沙盒无认证地交给任意可达者。
+      # 远程访问走 SSH 隧道，或后续在 Center web 前加认证反代（TODO）。
+      - "127.0.0.1:${STATION_PORT}:8081"
+    extra_hosts:
+      # 单机开发：Center 域名在宿主 /etc/hosts 指向 127.0.0.1，容器内必须改指宿主网关，
+      # 否则 WarpStation 会把 Center wparse-proxy 解析成容器自己。
+      - "${CENTER_DOMAIN:-center.invalid}:host-gateway"
+    ulimits:
+      nproc: 4096
+    tmpfs:
+      # WarpStation 的规则校验 / 发布校验 / 沙盒会在 `<cwd>/tmp` 下建工作目录；
+      # `/app` 是 root:root 755，运行用户 999 建不了 → `Permission denied (os error 13)`。
+      # 用 tmpfs（1777）提供可写临时根；重启即清，不污染镜像层。
+      - /app/tmp:rw,nosuid,size=256m,mode=1777
+    # v1 与上游 wp-station 保持一致：沙盒任务会起 wparse 子进程。
+    # TODO(security): 后续安全分析时评估能否去掉；不要把它当成长期方案。
+    security_opt:
+      - seccomp=unconfined
+    command:
+      - /bin/sh
+      - -c
+      - |
+        git config --global user.name "WarpStation"
+        git config --global user.email "station@warpparse.local"
+        # bind 挂载的属主是部署账号（组 999），git 会报 dubious ownership；容器内放开即可。
+        git config --global --add safe.directory '*'
+        exec /app/wp-station
+
   # ── 前端（nginx：**终止 TLS** + 静态托管 + /api 反代到 center）──
   #
-  # 镜像内**不含**站点配置（与 wist-gateway-web 同构）：由 sys/configs/web/nginx.conf.tpl 渲染出
-  # configs/web/nginx.conf 后挂到 /etc/nginx/conf.d/default.conf。
-  # 本页 nginx 在容器内 **443** 上跑 **HTTPS**：服务器证书只读挂载自站点身份
-  # `identity/center/control-center-server.{crt,key}`（由站点 CA 签、SAN 覆盖对外域名），宿主发布到 ${WEB_PORT}。
-  # `/api` 反代到 center 容器 3100（容器网络内明文 —— 中心自身不做 TLS）。
+  # 镜像内**不含**站点配置：由 sys/configs/web/nginx.conf.tpl 渲染出 configs/web/nginx.conf 后
+  # 挂到 /etc/nginx/conf.d/default.conf。容器内 **443** 上跑 HTTPS，证书来自站点身份
+  # `identity/center/control-center-server.{crt,key}`，宿主发布到 ${WEB_PORT}。
   web:
     container_name: wist-center-stack-web
     image: ${WIST_SPC}/wist-center-web:${WEB_TAG}
     restart: unless-stopped
     volumes:
       - ${WEB_NGINX_CONF}:/etc/nginx/conf.d/default.conf:ro
-      # 站点服务器证书/私钥（只读）：容器内 443 终止 TLS 用。SAN 覆盖对外域名，由 scripts/init-center.sh 备齐。
       - ./identity/center/control-center-server.crt:/certs/server.crt:ro
       - ./identity/center/control-center-server.key:/certs/server.key:ro
     ports:
@@ -194,4 +322,9 @@ volumes:
   postgres16-data:
     driver: local
   metrics_data:
+    driver: local
+  # WarpParse 工具链（wparse/wpgen/wproj）；一次性服务写入，WarpStation 只读挂载。
+  # 显式固定全局卷名：不随目录/项目名变化（与固定 container_name 同一理由）。
+  station-toolchain:
+    name: wp-station-toolchain
     driver: local

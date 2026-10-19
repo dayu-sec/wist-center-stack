@@ -5,12 +5,24 @@ system:
   value: quay.io/victoriametrics
 - name: PG_SPC
   value: docker.io/library
+- name: STATION_SPC
+  value: ghcr.io/wp-labs
+- name: WARP_SPC
+  value: ghcr.io/wp-labs
+- name: NGINX_SPC
+  value: docker.io/library
 - name: CENTER_TAG
-  value: v0.17.2-alpha
+  value: v0.18.0-alpha
 - name: WEB_TAG
   value: v0.10.2-alpha
 - name: VM_TAG
   value: v1.154.0
+- name: STATION_TAG
+  value: v0.2.14-alpha
+- name: WARPPARSE_TAG
+  value: 0.30.0-alpha
+- name: NGINX_TAG
+  value: 1.27-alpine
 - name: GATEWAY_IMAGE
   value: ghcr.io/dayu-sec/wist-gateway:v0.17.0-alpha
 - name: PG_TAG
@@ -23,6 +35,12 @@ system:
   value: 55432
 - name: VM_PORT
   value: 28429
+- name: STATION_PORT
+  value: 18081
+- name: GIT_PROXY_PORT
+  value: 18082
+- name: WPARSE_PROXY_PORT
+  value: 18083
 - name: RETENTION_PERIOD
   value: 6
 - name: TZ
@@ -35,12 +53,42 @@ system:
   value: demo
 - name: PG_DB
   value: insight_demo
+- name: STATION_DB_NAME
+  value: wp-station
+- name: STATION_MODELS_REPO_URL
+  value: https://cnb.cool/dy-sec/jingang-cust/wist/wp-rules
+- name: STATION_INFRA_REPO_URL
+  value: https://cnb.cool/dy-sec/jingang-cust/wist/wp-infra
+- name: WP_GIT_BASE_URL
+  value: ''
+- name: WP_GIT_PUSH_USER
+  value: ''
+- name: WP_GIT_PUB_USER
+  value: ''
+- name: STATION_LOG_LEVEL
+  value: info
+- name: WP_GIT_AUTH_HEADER
+  value: Authorization
+- name: GIT_PROXY_ALLOW_CIDR
+  value: ''
+- name: GIT_PROXY_PUBLIC_BASE
+  value: ''
 - name: VICTORIA_METRICS_URL
   value: http://victoria-metrics:8428
 - name: CENTER_CONFIG_DIR
   value: ./configs/center
 - name: CENTER_ARTIFACT_DIR
   value: ./artifacts
+- name: STATION_CONFIG_DIR
+  value: ./configs/station
+- name: STATION_GITEA_ROOT_DIR
+  value: ./configs/station/gitea
+- name: STATION_PROJECT_MODELS_DIR
+  value: ./configs/station/gitea/wparse__models
+- name: STATION_PROJECT_INFRA_DIR
+  value: ./configs/station/gitea/wparse__infra
+- name: GIT_PROXY_CONFIG_DIR
+  value: ./configs/git-proxy
 - name: WEB_NGINX_CONF
   value: ./configs/web/nginx.conf
 - name: PG_INITDB_DIR

@@ -11,7 +11,7 @@ mod operators {
     // 0) 确保运行期/身份目录存在（渲染目标落 configs/，站点身份落 identity/；Docker 会在 up 时
     //    自建缺失的挂载源，但那时属主是 root，所以我们先建、随后由 `gops sys perms` 归位）。
     //    拆挂后 configs/center **本身不再是挂载源**，但它仍必须由 localize 以部署账号创建。
-    gx.cmd ( "mkdir -p configs/center configs/web identity/center artifacts" );
+    gx.cmd ( "mkdir -p configs/center configs/web configs/station configs/git-proxy identity/center artifacts" );
     // ① 备料控制中心：CA（信任根 + 服务器证书，落站点身份 identity/center）+ 渲染值
     //    wist-center.value.json + 凭据密钥文件 `.wist/sec-value.yml`（缺什么补什么）。
     //    CA 已存在即跳过（换公章会让所有已分发信任根失效）。域名取合并后的值 CENTER_DOMAIN。
@@ -35,6 +35,29 @@ mod operators {
       dst  : "./configs/center/wist-center.toml",
       file : "./configs/center/wist-center.value.json"
     );
+    // ②' 规则管理（WarpStation）：备料运行期目录 / 密钥 / 渲染值 / CNB 预克隆 / WarpParse CA。
+    //     · 与中心**解耦**：中心不可用不影响规则维护；但 WarpStation 预加载的 CA 默认取中心 CA，
+    //       所以必须在 ①/② 之后执行（identity/center/control-center.pem 已就绪）。
+    //     · gitea/wparse__models、gitea/wparse__infra 是外部 CNB 仓库的工作副本（git-only），落在
+    //       configs/station 下：随 configs/ 一起备份，且不会进交付包（sys-prj.yml 的 ignore/protect）。
+    //     · Git 凭据由环境注入（WP_GIT_PUSH_TOKEN / WP_GIT_PUB_TOKEN），或写 .wist，不写 vars。
+    gx.cmd ( "./scripts/init-station.sh configs/station" );
+    //     · 渲染 WarpStation 主配置（DB 密码渲染进 config.toml；CNB 写 token 走 station.env）。
+    gx.tpl (
+      tpl  : "./sys/configs/station/config.toml.tpl",
+      dst  : "./configs/station/config.toml",
+      file : "./configs/station/station.value.json"
+    );
+    //     · 渲染 Git Proxy（路径白名单 + CNB 读凭据；值来自 git-proxy.value.json）。
+    gx.tpl (
+      tpl  : "./sys/configs/git-proxy/nginx.conf.tpl",
+      dst  : "./configs/git-proxy/nginx.conf",
+      file : "./configs/git-proxy/git-proxy.value.json"
+    );
+    //     · 收紧配置/密钥文件权限（含 CNB 读凭据的 nginx.conf 必须 600）；
+    //       随后 `gops sys perms` 会按 compose 的只读挂载再对齐一次。
+    gx.cmd ( "chmod 640 configs/station/config.toml && chmod 600 configs/station/station.env configs/station/station.value.json configs/git-proxy/git-proxy.value.json configs/git-proxy/nginx.conf" );
+
     // ③ 前端站点配置：备料渲染值（脚本）→ gx.tpl → configs/web/nginx.conf。
     //    渲染值必须走脚本，不能在这里 printf：GXL 字符串**不还原 `\"`**，而 Ubuntu 的 /bin/sh 是
     //    dash（printf 不认 `\"`，会把反斜杠写进文件）→ 非法 JSON → gx.tpl 报 parse json data file。

@@ -55,6 +55,9 @@ protect:
 #   control-center-server.key    # 中心服务器私钥
 #   control-center.srl           # CA 序列号（宿主 openssl 续签要写）
 #
+# `identity/station/` 里（WarpStation 对接 Center wparse-proxy 用）：
+#   warparse-ca.pem              # WarpStation 预加载的信任根（默认 = 中心 CA 的副本）
+#
 # **为什么含私钥**：身份是「证书 + 私钥」一对，只留公开半不自足 —— 丢了 CA 私钥就签不出新的
 # 服务器 / 客户端证书（= 换锚、所有网关重发信任根），契约等于冻结 / 作废。故整目录进 contract，
 # 让 `contract export` 出来的归档即可**独立复原站点身份**。
@@ -73,8 +76,8 @@ contract:
 
 # 备份选取（**扁平列表**：只表达“丢了什么代价”，**不触发任何删除**）。
 # 列进来的都是站点**不可再生 / 需原样回放**的材料：`configs/`（渲染出的 `wist-center.toml`、
-# JSON store、logs —— 丢了网关凭客户端证书重连重建）与密钥文件 `.wist/sec-value.yml`
-# （admin token / hmac secret）。注意：`wist-center.toml` 里只有 `${SEC_CENTER_*}` **占位**
+# JSON store、logs、`configs/station/` 的 CNB 工作副本与 token、`configs/git-proxy/`）
+# 与密钥文件 `.wist/sec-value.yml`（admin token / hmac secret / app DB 密码 / CNB token）。注意：`wist-center.toml` 里只有 `${SEC_CENTER_*}` **占位**
 # （真值不落盘），所以归档**必须**带上 `.wist`，否则还原后重新生成会换掉 token / hmac
 # （已注册网关的派生凭据全失效）。
 #   注意：PostgreSQL 数据卷（pg 里的 store）与 VictoriaMetrics 时序**不在文件备份范围内** ——

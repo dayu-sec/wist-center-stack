@@ -103,6 +103,15 @@ cos_region = "ap-hongkong"
 # 启动时写入 store（仅缺失时写入）的网关种子凭据，每项 `gateway_id:token`。
 gateway_credentials = []
 
+# 规则发布兼容入口（WarpStation **设备面**）：独立 HTTPS listener + 命令队列。
+# TLS 复用上面的 server cert/key（WARP_INSIGHT_CENTER_SERVER_{CERT,KEY}_PATH）；
+# 设备 Token 是 Center 签发的 proxy token（管理面
+# `POST /api/v1/admin/gateways/{gateway_id}/wparse-proxy-token`），不是网关 mTLS 证书。
+# 需要 `[store].database_url`；FileStore 模式下自动禁用。
+[wparse_proxy]
+enabled = true
+listen_addr = "0.0.0.0:3101"
+
 # 本进程自己的运行日志（env_logger，走 log facade）。
 # 落文件（相对本配置目录解析 → 已挂载的 /wist-center/logs/，自动建父目录），写满自轮转。
 # 注意：给了 `file` 就**不再**写 stderr（`docker logs` 看不到中心自身日志；打开失败会回落 stderr）。

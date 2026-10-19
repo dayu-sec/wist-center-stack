@@ -202,26 +202,43 @@ remove_pidfile() {
 
 # 清理端口的**监听**进程。npm run dev 会派生 node/vite/esbuild 子孙进程，父进程退出后
 # 它们可能仍占着端口，所以停服/收尾都要按端口兜一次底。
-# 注意：必须带 -sTCP:LISTEN —— 否则 lsof 会把与端口的普通连接（例如浏览器的页面连接）
-# 也列出来，那就可能误杀无关进程。
+# 注意：
+#   · 必须带 -sTCP:LISTEN —— 否则 lsof 会把与端口的普通连接（例如浏览器的页面连接）
+#     也列出来，那就可能误杀无关进程。
+#   · 必须校验进程命令行匹配 `pattern` —— 端口可能被容器端口转发（macOS 上是 OrbStack /
+#     Docker Desktop 的 helper）占用，无边界的 `kill $(lsof -ti :port)` 会把它们一起杀掉，
+#     导致 Docker API 断连。
 kill_port_holder() {
   local port="$1"
   local label="${2:-端口}"
-  local holders
+  local pattern="${3:-}"
+  local holders pid matched=()
   holders="$(lsof -ti "tcp:${port}" -sTCP:LISTEN 2>/dev/null || true)"
   [[ -z "${holders}" ]] && return 0
-  echo "  端口 ${port} 仍被占用（${label}），清理：${holders}"
-  kill ${holders} 2>/dev/null || true
+  for pid in ${holders}; do
+    if [[ -z "${pattern}" ]] || ps -p "${pid}" -o command= 2>/dev/null | grep -Eq "${pattern}"; then
+      matched+=("${pid}")
+    else
+      echo "  端口 ${port} 的监听者 pid=${pid} 不匹配 \"${pattern}\"，跳过（可能是容器/端口转发）"
+    fi
+  done
+  [[ ${#matched[@]} -eq 0 ]] && return 0
+  echo "  端口 ${port} 仍被占用（${label}），清理：${matched[*]}"
+  kill "${matched[@]}" 2>/dev/null || true
   sleep 0.5
 }
 
 # 停服：优先 pidfile（并校验 pid 确实是目标进程，防 pid 复用），退化到端口占用者。
-# stop_service <显示名> <pidfile> <端口> <进程命令行特征>
+# stop_service <显示名> <pidfile> <端口> <pidfile 进程特征> [端口监听者特征]
+#   · 端口特征缺省同 pidfile 特征；web 的子孙进程是 node/vite，需要单独传。
+#   · 端口兜底**同样校验特征**：否则会把容器端口转发（OrbStack / Docker Desktop helper）
+#     当成 dev 进程杀掉，连带 Docker API 断连。
 stop_service() {
   local label="$1"
   local pidfile="$2"
   local port="$3"
   local pattern="$4"
+  local port_pattern="${5:-$4}"
   local pid=""
 
   [[ -f "${pidfile}" ]] && pid="$(cat "${pidfile}" 2>/dev/null || true)"
@@ -240,21 +257,33 @@ stop_service() {
         kill -9 "${pid}" 2>/dev/null || true
       fi
       remove_pidfile "${pidfile}"
-      kill_port_holder "${port}" "${label}"
+      kill_port_holder "${port}" "${label}" "${port_pattern}"
       return 0
     fi
     echo "${label} 的 ${pidfile} 记的是 pid=${pid}，但该进程不含 \"${pattern}\"（pid 可能已被复用），忽略 pidfile。"
   fi
 
-  local holders
+  local holders holder matched=()
   holders="$(lsof -ti "tcp:${port}" -sTCP:LISTEN 2>/dev/null || true)"
   if [[ -z "${holders}" ]]; then
     echo "${label} 未在运行（端口 ${port} 无监听）"
     remove_pidfile "${pidfile}"
     return 0
   fi
-  echo "按端口 ${port} 停止 ${label}（pid=${holders}）"
-  kill ${holders} 2>/dev/null || true
+  for holder in ${holders}; do
+    if ps -p "${holder}" -o command= 2>/dev/null | grep -Eq "${port_pattern}"; then
+      matched+=("${holder}")
+    else
+      echo "端口 ${port} 被非目标进程占用（pid=${holder}），不杀：$(ps -p "${holder}" -o command= 2>/dev/null | cut -c1-120)"
+    fi
+  done
+  if [[ ${#matched[@]} -eq 0 ]]; then
+    echo "${label} 未在运行（端口 ${port} 的监听者不是 ${port_pattern}）"
+    remove_pidfile "${pidfile}"
+    return 0
+  fi
+  echo "按端口 ${port} 停止 ${label}（pid=${matched[*]}）"
+  kill "${matched[@]}" 2>/dev/null || true
   sleep 0.5
   remove_pidfile "${pidfile}"
 }
