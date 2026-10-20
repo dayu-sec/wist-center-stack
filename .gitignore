@@ -25,9 +25,8 @@
 sys/resolved_vars.yml
 # 交付锁（`gops sys package` 生成，带时间戳；不入库，由 package 自己塞进交付包）
 /deliver.lock
-# 值文件：忽略派生的值文件，保留客户覆盖 values/value.yml（版本化）
-values/*
-!values/value.yml
+# 值文件：现场值由 ops-prj 项目维护（<prj>/values/<sys>/），本仓不再跟踪 values/ 内容。
+values/
 # .env 由 gops sys localize 生成（非密钥配置）
 .env
 

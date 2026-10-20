@@ -1,5 +1,0 @@
-# 现场覆盖值（产品默认见 sys/setting/vars.yml；改完跑 `gops sys localize` 即生效）。
-#
-# 只写需要覆盖的项；未写的取产品默认值。本文件版本化，但**不要**放密钥
-# （CNB token / DB app 密码走 .wist/sec-value.yml 或 localize 时的环境变量）。
-CENTER_DOMAIN: c-dev01.test.gw.jingang.cloud
