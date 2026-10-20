@@ -3,6 +3,19 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.3.2-alpha] - 2026-10-20
+
+### 变更
+
+- **镜像钉子抬到 `wist-center v0.19.2-alpha` + `wist-center-web v0.10.4-alpha`**：
+  0.19.2 把 gwlinkd 回执里的任务日志目录规范化成 `entries[].log_dir`（不再是只能从
+  `detail` 里正则捞），0.10.4 的前端据此直接展示日志目录。
+  两端的任务日志也补齐了：gwlinkd `0.15.3` 修了脱敏漏项（`Authorization: Basic/Digest`、
+  `x-api-key`、JSON 形态的 `"token":"..."`）、目录名消毒与保留策略。
+
+> 现场迁移：`values/<系统名>/sys_value.yml` 里显式钉的 `CENTER_IMAGE_TAG` /
+> `CENTER_WEB_IMAGE_TAG` 需同步到 `v0.19.2-alpha` / `v0.10.4-alpha`，否则覆盖优先生效。
+
 ## [0.3.1-alpha] - 2026-10-20
 
 ### 修复
