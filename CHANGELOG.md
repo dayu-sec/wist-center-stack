@@ -3,6 +3,49 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.3.0-alpha] - 2026-10-20
+
+### 新增
+
+- **管理面 / 网关面分离（需 `wist-center` ≥ 0.19.0）**：中心的 `[server] admin_addr` 由模板渲染
+  （容器内 `3102`），两侧 listener 的路由**互斥**：
+  - 网关面 `listen_addr`（宿主 `CENTER_HOST_PORT`，**公网**，mTLS）：只挂 `/api/v1/gateway/**` + `/api/v1/version`；
+  - 管理面 `admin_addr`（宿主 `CENTER_ADMIN_HOST_PORT`，默认只绑回环）：只挂 `/api/v1/admin/**` + `/api/v1/version`；
+  - 白名单外统一 404 —— admin token 泄露也打不到公网 listener 上的管理 API。
+- **`*_BIND_IP` 按面绑定**：`CENTER_BIND_IP` / `GIT_PROXY_BIND_IP` 对外（`0.0.0.0`），
+  `CENTER_ADMIN_BIND_IP` / `WEB_BIND_IP` / `PG_BIND_IP` / `VM_BIND_IP` / `WPARSE_PROXY_BIND_IP`
+  默认 `127.0.0.1`。内网开放时改成内网网卡 IP，**不要**把管理面 / 数据库改成 `0.0.0.0`。
+- **域名三分**：`CENTER_DOMAIN` → `WEB_WGC_DOMAIN`（管理面 / Web UI）；新增 `API_WGC_DOMAIN`
+  （网关面：`public_url`、gwlinkd 直连 `3100`、Git Proxy）与 `WEB_WGS_DOMAIN`（原 `STATION_DOMAIN`，
+  WarpStation Web）。服务器证书 SAN 同时包含三者；留空时分别派生 `api.` / `station.` 前缀。
+- **`scripts/provision-station-device.sh`** 入库（README 已引用）：设备地址默认 `API_WGC_DOMAIN`，
+  Center API 指管理面端口，设备 token 走 `gops sec`。
+
+### 变更
+
+- `web` 的 `/api/` 反代从 `center:3100` 改为 **`center:3102`（管理面）**；前端宿主端口改由
+  `${WEB_BIND_IP}:${WEB_HOST_PORT}` 控制（默认仍只绑 `127.0.0.1`）。
+- `CENTER_IMAGE_TAG` 默认值提升到 **`v0.19.0-alpha`**（`admin_addr` 需要该版本才生效）。
+
+### 变量改名（现场 `values/<sys>/sys_value.yml` 需同步）
+
+本次把系统变量按「镜像 / 宿主端口 / 域名」重新命名（只改名字，语义不变）：
+
+| 旧名 | 新名 |
+|---|---|
+| `WIST_SPC` / `NGINX_SPC` / `WARP_SPC` | `CENTER_REGISTRY` / `GIT_PROXY_REGISTRY` / `WARPPARSE_REGISTRY` |
+| `CENTER_TAG` / `WEB_TAG` | `CENTER_IMAGE_TAG` / `CENTER_WEB_IMAGE_TAG` |
+| `VM_TAG` / `STATION_TAG` / `WARPPARSE_TAG` / `NGINX_TAG` / `PG_TAG` | `VM_IMAGE_TAG` / `STATION_IMAGE_TAG` / `WARPPARSE_IMAGE_TAG` / `GIT_PROXY_IMAGE_TAG` / `PG_IMAGE_TAG` |
+| `CENTER_PORT` / `CENTER_ADMIN_PORT` / `WEB_PORT` / `PG_PORT` | `CENTER_HOST_PORT` / `CENTER_ADMIN_HOST_PORT` / `WEB_HOST_PORT` / `PG_HOST_PORT` |
+| `VM_PORT` / `STATION_PORT` / `GIT_PROXY_PORT` / `WPARSE_PROXY_PORT` | `VM_HOST_PORT` / `STATION_HOST_PORT` / `GIT_PROXY_HOST_PORT` / `WPARSE_PROXY_HOST_PORT` |
+| `RETENTION_PERIOD` | `VM_RETENTION_MONTHS` |
+| `PG_USER` / `PG_PASSWORD` | `PG_SUPERUSER` / `PG_SUPERUSER_PASSWORD` |
+| `STATION_MODELS_REPO_URL` / `STATION_INFRA_REPO_URL` | `WP_RULES_REPO_URL` / `WP_INFRA_REPO_URL` |
+| `STATION_PROJECT_MODELS_DIR` / `STATION_PROJECT_INFRA_DIR` | `STATION_MODELS_DIR` / `STATION_INFRA_DIR` |
+| `CENTER_DOMAIN` / `PUBLIC_API_DOMAIN` / `STATION_DOMAIN` | `WEB_WGC_DOMAIN` / `API_WGC_DOMAIN` / `WEB_WGS_DOMAIN` |
+
+旧名不会被识别（不会报错，但覆盖会静默失效）。升级时按上表改现场值文件。
+
 ## [0.2.3-alpha] - 2026-10-20
 
 ### 变更
@@ -51,6 +94,7 @@
   `.wist/sec-value.yml`（600）预先提供；`gops sys localize` 只校验，缺失/为空直接报错，
   不再生成、补键、迁移或改写文件。
 - `STATION_GITEA_ROOT_DIR` → **`STATION_KNOWLEDGE_DIR`**（默认 `./knowledge/station`）。
+
 
 ## [0.2.0-alpha] - 2026-10-19
 
@@ -240,10 +284,10 @@
 
 - **`public_url` 少了端口 → 网关 link-upstream 指错口**。center 生成的 link-upstream / `init_url` /
   `control_center_endpoint` 全部**原样取自 `public_url`、不补端口**（`wist-center` 侧代码）。而本栈 prod 的
-  `scripts/init-center-pub.sh` 把它拼成了 `https://<CENTER_DOMAIN>`（**无端口**）→ 网关拿到的是
+  `scripts/init-center-pub.sh` 把它拼成了 `https://<WEB_WGC_DOMAIN>`（**无端口**）→ 网关拿到的是
   `https://<域>/api/v1/gateway/link-upstream`，落到 **443**（web 前端），而非网关应**直连**的 **3100**
   （443 那层 nginx 终止 TLS、不透传客户端证书 → mTLS 认不了人）。现在 `CENTER_PUBLIC_URL` 拼成
-  `https://<CENTER_DOMAIN>:<CENTER_PORT>`（端口为 443 时省略），与 dev 侧口径（`dev/lib.sh`）一致。
+  `https://<WEB_WGC_DOMAIN>:<CENTER_PORT>`（端口为 443 时省略），与 dev 侧口径（`dev/lib.sh`）一致。
   > 既有现场：`identity/center/.env` 里的值**非空一律保留**，需手工把 `CENTER_PUBLIC_URL` 改成带端口的
   > 值（或删掉该键再 `gops sys localize`）。
 
@@ -333,9 +377,9 @@
   `wist-gateway-stack` 当前钉的网关版本对齐 —— 这是中心生成「网关安装命令」时写进
   `wist-center.toml` 的 `[artifacts] gateway_image` 默认值，现场仍可按实际网关栈镜像覆盖）。
 - **前端 `web` 容器自己终止 TLS**：nginx 从容器内 **80 明文** 改为 **443 HTTPS**（宿主仍发布到 `${WEB_PORT}`，默认 18080），
-  证书 = 站点身份 `identity/center/control-center-server.{crt,key}`（由站点 CA 签、SAN 覆盖 `CENTER_DOMAIN`）；
+  证书 = 站点身份 `identity/center/control-center-server.{crt,key}`（由站点 CA 签、SAN 覆盖 `WEB_WGC_DOMAIN`）；
   新增 `scripts/ensure-center-server-cert.sh`（幂等：SAN 覆盖就不重签，换域名/加 SAN 只重签**叶**、CA 不动）。
-  于是**不再需要**外部反代即可 `https://<CENTER_DOMAIN>:${WEB_PORT}`。
+  于是**不再需要**外部反代即可 `https://<WEB_WGC_DOMAIN>:${WEB_PORT}`。
 - **`sys-prj.yml` 跟进 gops 2.3.0**：`preserve:` 更名为 `protect:`；`backup:` 由分级 `{restore, rebuild}`
   改为**扁平列表**（旧形态在 2.3 下已无法加载，`gops sys localize` 直接报错）。`artifacts/`
   属可重投的“可重建”，不再入表。路径与语义不变。

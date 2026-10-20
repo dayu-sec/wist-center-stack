@@ -14,8 +14,8 @@ mod operators {
     gx.cmd ( "mkdir -p configs/center configs/web configs/station configs/git-proxy identity/center artifacts" );
     // ① 备料控制中心：CA（信任根 + 服务器证书，落站点身份 identity/center）+ 渲染值
     //    wist-center.value.json + 凭据密钥文件 `.wist/sec-value.yml`（缺什么补什么）。
-    //    CA 已存在即跳过（换公章会让所有已分发信任根失效）。域名取合并后的值 CENTER_DOMAIN。
-    gx.cmd ( "./scripts/init-center.sh configs/center $(printenv CENTER_DOMAIN)" );
+    //    CA 已存在即跳过（换公章会让所有已分发信任根失效）。域名取合并后的值 WEB_WGC_DOMAIN。
+    gx.cmd ( "./scripts/init-center.sh configs/center $(printenv WEB_WGC_DOMAIN)" );
     // ①' 现场态（站点事实）：**声明 + 值分开**（docker-compose 口径）。
     //     · **声明** `wist-center-pub.toml`（只写 `${VAR}` 引用、不含现场值）—— 与其它交付物一样
     //       走 **tpl** 机制渲染（交付物，随版本覆盖；值不在这里，所以重渲动不到现场）；
@@ -62,7 +62,7 @@ mod operators {
     //    渲染值必须走脚本，不能在这里 printf：GXL 字符串**不还原 `\"`**，而 Ubuntu 的 /bin/sh 是
     //    dash（printf 不认 `\"`，会把反斜杠写进文件）→ 非法 JSON → gx.tpl 报 parse json data file。
     //    macOS 上 sh 是 bash（printf 吃掉反斜杠）所以看不出问题。详见脚本头部注释。
-    gx.cmd ( "./scripts/init-web-conf.sh $(printenv CENTER_DOMAIN) $(printenv STATION_DOMAIN)" );
+    gx.cmd ( "./scripts/init-web-conf.sh $(printenv WEB_WGC_DOMAIN) $(printenv WEB_WGS_DOMAIN)" );
     gx.tpl (
       tpl  : "./sys/configs/web/nginx.conf.tpl",
       dst  : "./configs/web/nginx.conf",

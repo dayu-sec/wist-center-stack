@@ -16,9 +16,9 @@
 #   凭据密钥文件（栈根 `.wist/sec-value.yml`）：**运维提供**，本脚本只校验（缺失/为空直接报错）。
 #
 # 环境（gops 把合并后的系统变量以**环境变量**注入 localize 流程）：
-#   CENTER_DOMAIN          对外域名（第 2 参数缺省时用它）；也决定 public_url 与证书 SAN
+#   WEB_WGC_DOMAIN          对外域名（第 2 参数缺省时用它）；也决定 public_url 与证书 SAN
 #   CENTER_EXTRA_SANS      附加 SAN（逗号分隔的域名/IP，备用入口）
-#   PG_USER / PG_PASSWORD / PG_DB   中心存储 DSN 的组成（容器网络内服务名 postgres）
+#   PG_SUPERUSER / PG_SUPERUSER_PASSWORD / PG_DB   中心存储 DSN 的组成（容器网络内服务名 postgres）
 #   VICTORIA_METRICS_URL   时序库地址（容器网络内服务名 victoria-metrics）
 #   GATEWAY_IMAGE          生成网关安装命令用的镜像（写进 [artifacts] gateway_image）
 #
@@ -27,7 +27,7 @@
 set -euo pipefail
 
 CONFIG_DIR="${1:-configs/center}"
-DOMAIN="${2:-${CENTER_DOMAIN:-}}"
+DOMAIN="${2:-${WEB_WGC_DOMAIN:-}}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -46,8 +46,8 @@ SEC_FILE="${STACK_ROOT}/.wist/sec-value.yml"
 # shellcheck disable=SC1091
 . "${SCRIPT_DIR}/lib/sec.sh"
 
-PG_USER="${PG_USER:-demo}"
-PG_PASSWORD="${PG_PASSWORD:-demo}"
+PG_SUPERUSER="${PG_SUPERUSER:-demo}"
+PG_SUPERUSER_PASSWORD="${PG_SUPERUSER_PASSWORD:-demo}"
 PG_DB="${PG_DB:-insight_demo}"
 VICTORIA_METRICS_URL="${VICTORIA_METRICS_URL:-}"
 GATEWAY_IMAGE="${GATEWAY_IMAGE:-wist-gateway:latest}"
@@ -55,7 +55,7 @@ GATEWAY_IMAGE="${GATEWAY_IMAGE:-wist-gateway:latest}"
 note() { echo "  $*"; }
 
 if [[ -z "${DOMAIN}" ]]; then
-  echo "用法: $0 <配置目录> <对外域名>  （或设 CENTER_DOMAIN）" >&2
+  echo "用法: $0 <配置目录> <对外域名>  （或设 WEB_WGC_DOMAIN）" >&2
   exit 2
 fi
 
@@ -68,14 +68,18 @@ esac
 
 mkdir -p "${IDENTITY_DIR}" "${CONFIG_DIR}/state" "${CONFIG_DIR}/logs" "${STACK_ROOT}/artifacts"
 
-# 服务器证书 SAN 要同时覆盖中心域名与 WarpStation 域名（同一个 nginx 端口、两个 server_name）。
-# 留空 = 派生 station.<CENTER_DOMAIN>；现场可用 STATION_DOMAIN / CENTER_EXTRA_SANS 覆盖。
-STATION_DOMAIN="${STATION_DOMAIN:-station.${DOMAIN}}"
+# 服务器证书 SAN 要同时覆盖：管理面/UI 域名、**公网网关面域名**、WarpStation 域名。
+# 留空 = 派生 `api.<WEB_WGC_DOMAIN>` / `station.<WEB_WGC_DOMAIN>`；现场可用
+# API_WGC_DOMAIN / WEB_WGS_DOMAIN / CENTER_EXTRA_SANS 覆盖。
+API_WGC_DOMAIN="${API_WGC_DOMAIN:-api.${DOMAIN}}"
+WEB_WGS_DOMAIN="${WEB_WGS_DOMAIN:-station.${DOMAIN}}"
 EXTRA_SANS="${CENTER_EXTRA_SANS:-}"
-case ",${EXTRA_SANS}," in
-  *",${STATION_DOMAIN},"*) ;;
-  *) EXTRA_SANS="${EXTRA_SANS:+${EXTRA_SANS},}${STATION_DOMAIN}" ;;
-esac
+for san in "${API_WGC_DOMAIN}" "${WEB_WGS_DOMAIN}"; do
+  case ",${EXTRA_SANS}," in
+    *",${san},"*) ;;
+    *) EXTRA_SANS="${EXTRA_SANS:+${EXTRA_SANS},}${san}" ;;
+  esac
+done
 
 # ── 1) 控制中心 CA（信任根 + 服务器证书）：缺失才生成，落站点身份目录 ──
 # control-center.pem 是分发给所有网关的信任根（control_center.trust_bundle）；

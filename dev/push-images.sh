@@ -519,7 +519,7 @@ cat <<EOF
     WIST_SPC（wist-center / wist-center-web，默认 ghcr.io/dayu-sec）
     PG_SPC  （postgres，默认 docker.io/library）
     VM_SPC  （victoria-metrics，默认 quay.io/victoriametrics）
-  要让它们拉 ${TARGET_REGISTRY} 的镜像，在 values/value.yml 覆盖后 \`gops sys localize\`（tag 不变）：
+  要让它们拉 ${TARGET_REGISTRY} 的镜像，在 ops-prj 的 values/<系统名>/sys_value.yml 覆盖后 \`gops sys localize\`（tag 不变）：
     WIST_SPC: ${TARGET_REGISTRY}
     PG_SPC:   ${TARGET_REGISTRY}
     VM_SPC:   ${TARGET_REGISTRY}

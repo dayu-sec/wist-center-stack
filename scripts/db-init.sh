@@ -4,7 +4,7 @@
 # 职责（设计文档 §9.7）：
 #   · center_app  ：只连 insight_demo（owner）
 #   · station_app ：只连 wp-station（owner）
-#   · 两个角色都**不是** superuser；db_admin（PG_USER）只用于 bootstrap / 备份
+#   · 两个角色都**不是** superuser；db_admin（PG_SUPERUSER）只用于 bootstrap / 备份
 #   · 既有现场把 db_admin 名下的对象改归属，并收紧 CONNECT/TEMPORARY
 #
 # 输入：

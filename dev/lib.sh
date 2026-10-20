@@ -76,7 +76,7 @@ detect_lan_ip() {
   printf '%s' "${ip}"
 }
 
-# ── 端口 / 地址（覆盖用同名 env；PG_PORT、VM_PORT 与 docker-compose.yml 同名同值）──
+# ── 端口 / 地址（覆盖用同名 env；`*_HOST_PORT` 与 sys/setting/vars.yml 同名同值）──
 # 开发态默认**放开监听**（0.0.0.0）+ 对外用**域名**（hosts 解析）—— 让 VM / 跨机也能访问中心；
 # **不要用 127.0.0.1**（那只有本机能连）。域名需在 Mac 与 VM 的 /etc/hosts 指向中心主机，例如：
 #   127.0.0.1        center.dev.wist.lab     # Mac（本机回环）
@@ -101,8 +101,8 @@ if [[ -z "${CENTER_PUBLIC_HOST}" ]]; then
   fi
 fi
 WEB_URL="${WEB_URL:-http://127.0.0.1:5173}"
-PG_PORT="${PG_PORT:-55432}"
-VM_PORT="${VM_PORT:-28429}"
+PG_PORT="${PG_HOST_PORT:-${PG_PORT:-55432}}"
+VM_PORT="${VM_HOST_PORT:-${VM_PORT:-28429}}"
 
 # 中心对外协议（http / https）；start_center / start_web 各自按 TLS 开关设定。
 CENTER_SCHEME="http"

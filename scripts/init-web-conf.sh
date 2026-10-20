@@ -6,7 +6,7 @@
 #   scripts/init-web-conf.sh <center_domain> [station_domain] [输出目录]
 #     scripts/init-web-conf.sh c-dev01.test.gw.jingang.cloud station.c-dev01.test.gw.jingang.cloud
 #
-# station_domain 留空时派生 `station.<center_domain>`；也可用环境变量 STATION_DOMAIN 覆盖。
+# station_domain 留空时派生 `station.<center_domain>`；也可用环境变量 WEB_WGS_DOMAIN 覆盖。
 #
 # 为什么必须落在脚本里，而不是在 operators.gxl 里 printf 直接写：
 #   GXL 字符串字面量**不做转义还原** —— `\"` 会原样留下反斜杠；命令最终由 `/bin/sh -c`
@@ -20,7 +20,7 @@
 set -euo pipefail
 
 DOMAIN="${1:-}"
-STATION_DOMAIN="${2:-${STATION_DOMAIN:-}}"
+WEB_WGS_DOMAIN="${2:-${WEB_WGS_DOMAIN:-}}"
 OUT_DIR="${3:-configs/web}"
 STACK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,7 +42,7 @@ usage() {
 }
 
 [[ -n "${DOMAIN}" ]] || usage
-[[ -n "${STATION_DOMAIN}" ]] || STATION_DOMAIN="station.${DOMAIN}"
+[[ -n "${WEB_WGS_DOMAIN}" ]] || WEB_WGS_DOMAIN="station.${DOMAIN}"
 
 validate_domain() {
   local value="$1" label="$2"
@@ -54,7 +54,7 @@ validate_domain() {
   esac
 }
 validate_domain "${DOMAIN}" "域名"
-validate_domain "${STATION_DOMAIN}" "Station 域名"
+validate_domain "${WEB_WGS_DOMAIN}" "Station 域名"
 
 command -v openssl >/dev/null 2>&1 || { echo "缺少 openssl" >&2; exit 1; }
 
@@ -62,15 +62,15 @@ mkdir -p "${OUT_DIR}"
 
 # ── 1) 渲染值（center + station 两个 server_name）──
 tmp="$(mktemp "${OUT_DIR}/.nginx.value.XXXXXX")"
-printf '{\n  "web_domain": "%s",\n  "station_domain": "%s"\n}\n' "${DOMAIN}" "${STATION_DOMAIN}" >"${tmp}"
+printf '{\n  "web_domain": "%s",\n  "station_domain": "%s"\n}\n' "${DOMAIN}" "${WEB_WGS_DOMAIN}" >"${tmp}"
 chmod 644 "${tmp}"
 
 if [[ -f "${VALUE_JSON}" ]] && cmp -s "${tmp}" "${VALUE_JSON}"; then
   rm -f "${tmp}"
-  note "渲染值与当前一致（web_domain=${DOMAIN}, station_domain=${STATION_DOMAIN}），跳过：${VALUE_JSON}"
+  note "渲染值与当前一致（web_domain=${DOMAIN}, station_domain=${WEB_WGS_DOMAIN}），跳过：${VALUE_JSON}"
 else
   mv -f "${tmp}" "${VALUE_JSON}"
-  note "已写渲染值：${VALUE_JSON}（web_domain=${DOMAIN}, station_domain=${STATION_DOMAIN}）"
+  note "已写渲染值：${VALUE_JSON}（web_domain=${DOMAIN}, station_domain=${WEB_WGS_DOMAIN}）"
 fi
 
 # ── 2) basic auth 密码：**只读**密钥文件，不生成、不写 ──

@@ -17,8 +17,8 @@
 #   8) 生成 configs/station/gateway-wparse-snippet.toml（Gateway 对接片段）。
 #
 # 环境（gops 把合并后的系统变量以环境变量注入 localize 流程）：
-#   STATION_DB_NAME / STATION_MODELS_REPO_URL / STATION_INFRA_REPO_URL / STATION_LOG_LEVEL
-#   GIT_PROXY_PUBLIC_BASE / GIT_PROXY_ALLOW_CIDR / CENTER_DOMAIN / GIT_PROXY_PORT
+#   STATION_DB_NAME / WP_RULES_REPO_URL / WP_INFRA_REPO_URL / STATION_LOG_LEVEL
+#   GIT_PROXY_PUBLIC_BASE / GIT_PROXY_ALLOW_CIDR / WEB_WGC_DOMAIN / API_WGC_DOMAIN / GIT_PROXY_HOST_PORT
 #   WP_GIT_BASE_URL / WP_GIT_PUSH_USER / WP_GIT_PUB_USER / WP_GIT_AUTH_HEADER
 #   STATION_SKIP_REPO_CHECK 1 = 跳过分支/目录结构校验（只用于排障）
 #
@@ -31,13 +31,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 STATION_DB_NAME="${STATION_DB_NAME:-wp-station}"
-STATION_MODELS_REPO_URL="${STATION_MODELS_REPO_URL:-}"
-STATION_INFRA_REPO_URL="${STATION_INFRA_REPO_URL:-}"
+WP_RULES_REPO_URL="${WP_RULES_REPO_URL:-}"
+WP_INFRA_REPO_URL="${WP_INFRA_REPO_URL:-}"
 STATION_LOG_LEVEL="${STATION_LOG_LEVEL:-info}"
-CENTER_DOMAIN="${CENTER_DOMAIN:-center.example.com}"
+WEB_WGC_DOMAIN="${WEB_WGC_DOMAIN:-center.example.com}"
+# 网关面域名（gwlinkd 直连 3100 + Git Proxy）；留空 = 派生 `api.<WEB_WGC_DOMAIN>`。
+API_WGC_DOMAIN="${API_WGC_DOMAIN:-api.${WEB_WGC_DOMAIN}}"
 GIT_PROXY_PUBLIC_BASE="${GIT_PROXY_PUBLIC_BASE:-}"
 GIT_PROXY_ALLOW_CIDR="${GIT_PROXY_ALLOW_CIDR:-}"
-GIT_PROXY_PORT="${GIT_PROXY_PORT:-18082}"
+GIT_PROXY_HOST_PORT="${GIT_PROXY_HOST_PORT:-18082}"
 WP_GIT_BASE_URL="${WP_GIT_BASE_URL:-}"
 WP_GIT_PUSH_USER="${WP_GIT_PUSH_USER:-}"
 WP_GIT_PUB_USER="${WP_GIT_PUB_USER:-}"
@@ -60,10 +62,10 @@ abs_path() {
 # v0.2.14 固定布局：<knowledge>/{wparse,wfusion}__{models,infra}。
 # 工作区根是**独立挂载点**，由 vars/values 的 STATION_KNOWLEDGE_DIR 决定，
 # 不从 CONFIG_DIR 推导（configs/ 是配置，工作区是版本化知识库，两者生命周期不同）。
-STATION_KNOWLEDGE_ROOT="$(abs_path "${STATION_KNOWLEDGE_DIR:?STATION_KNOWLEDGE_DIR is required（在 vars.yml / values/value.yml 设置）}")"
+STATION_KNOWLEDGE_ROOT="$(abs_path "${STATION_KNOWLEDGE_DIR:?STATION_KNOWLEDGE_DIR is required（在 vars.yml / ops-prj 的 values/<系统名>/sys_value.yml 设置）}")"
 STATION_KNOWLEDGE_ROOT="${STATION_KNOWLEDGE_ROOT%/}"
-MODELS_DIR="$(abs_path "${STATION_PROJECT_MODELS_DIR:-${STATION_KNOWLEDGE_ROOT}/wparse__models}")"
-INFRA_DIR="$(abs_path "${STATION_PROJECT_INFRA_DIR:-${STATION_KNOWLEDGE_ROOT}/wparse__infra}")"
+MODELS_DIR="$(abs_path "${STATION_MODELS_DIR:-${STATION_KNOWLEDGE_ROOT}/wparse__models}")"
+INFRA_DIR="$(abs_path "${STATION_INFRA_DIR:-${STATION_KNOWLEDGE_ROOT}/wparse__infra}")"
 
 note() { echo "  $*"; }
 warn() { echo "  ⚠ $*" >&2; }
@@ -72,7 +74,7 @@ warn() { echo "  ⚠ $*" >&2; }
 GIT_PROXY_PUBLIC_BASE="${GIT_PROXY_PUBLIC_BASE%/}"
 WP_GIT_BASE_URL="${WP_GIT_BASE_URL%/}"
 if [[ -z "${GIT_PROXY_PUBLIC_BASE}" ]]; then
-  GIT_PROXY_PUBLIC_BASE="https://${CENTER_DOMAIN}:${GIT_PROXY_PORT}"
+  GIT_PROXY_PUBLIC_BASE="https://${API_WGC_DOMAIN}:${GIT_PROXY_HOST_PORT}"
 fi
 
 mkdir -p \
@@ -159,10 +161,10 @@ esac
 
 # WarpStation 的 [gitea].base_url：留空则从仓库 URL 推导（scheme://host）。
 if [[ -z "${WP_GIT_BASE_URL}" ]]; then
-  WP_GIT_BASE_URL="$(python3 -c 'import sys;from urllib.parse import urlparse;p=urlparse(sys.argv[1]);print(f"{p.scheme}://{p.netloc}")' "${STATION_MODELS_REPO_URL}")"
+  WP_GIT_BASE_URL="$(python3 -c 'import sys;from urllib.parse import urlparse;p=urlparse(sys.argv[1]);print(f"{p.scheme}://{p.netloc}")' "${WP_RULES_REPO_URL}")"
 fi
 [[ -n "${WP_GIT_BASE_URL}" ]] || {
-  echo "错误：无法推导 WP_GIT_BASE_URL（STATION_MODELS_REPO_URL 为空或不合法）" >&2
+  echo "错误：无法推导 WP_GIT_BASE_URL（WP_RULES_REPO_URL 为空或不合法）" >&2
   exit 1
 }
 
@@ -201,7 +203,7 @@ ASK
 clone_or_update() {
   local url="$1" dest="$2" label="$3"
   [[ -n "${url}" ]] || {
-    echo "错误：${label} 的仓库地址为空（STATION_MODELS_REPO_URL / STATION_INFRA_REPO_URL）" >&2
+    echo "错误：${label} 的仓库地址为空（WP_RULES_REPO_URL / WP_INFRA_REPO_URL）" >&2
     exit 1
   }
 
@@ -252,8 +254,8 @@ clone_or_update() {
   git -C "${dest}" config protocol.file.allow never
 }
 
-clone_or_update "${STATION_MODELS_REPO_URL}" "${MODELS_DIR}" "wp-rules(wparse__models)"
-clone_or_update "${STATION_INFRA_REPO_URL}" "${INFRA_DIR}" "wp-infra(wparse__infra)"
+clone_or_update "${WP_RULES_REPO_URL}" "${MODELS_DIR}" "wp-rules(wparse__models)"
+clone_or_update "${WP_INFRA_REPO_URL}" "${INFRA_DIR}" "wp-infra(wparse__infra)"
 
 check_repo() {
   local dest="$1" dir="$2" label="$3"
@@ -325,9 +327,9 @@ chmod 600 "${tmp_json}"
 # ── 5) 渲染值 + 路径推导：Git Proxy / Gateway 片段 ──
 PROXY_VALUES="${GIT_PROXY_CONFIG_DIR}/git-proxy.value.json"
 tmp_proxy="$(mktemp "${GIT_PROXY_CONFIG_DIR}/.git-proxy.value.XXXXXX")"
-python3 - "${tmp_proxy}" "${CENTER_DOMAIN}" "${WP_GIT_BASE_URL}" \
+python3 - "${tmp_proxy}" "${API_WGC_DOMAIN}" "${WP_GIT_BASE_URL}" \
   "${WP_GIT_AUTH_HEADER}" "${GIT_PUB_USER}" "${GIT_PUB_TOKEN}" \
-  "${STATION_MODELS_REPO_URL}" "${STATION_INFRA_REPO_URL}" "${GIT_PROXY_ALLOW_CIDR}" <<'PY'
+  "${WP_RULES_REPO_URL}" "${WP_INFRA_REPO_URL}" "${GIT_PROXY_ALLOW_CIDR}" <<'PY'
 import base64, json, re, sys
 from urllib.parse import urlparse
 
@@ -350,7 +352,7 @@ git = urlparse(git_base)
 if not git.hostname:
     raise SystemExit(f"WP_GIT_BASE_URL 不合法：{git_base!r}")
 if not models.hostname or not infra.hostname:
-    raise SystemExit("STATION_MODELS_REPO_URL / STATION_INFRA_REPO_URL 不合法")
+    raise SystemExit("WP_RULES_REPO_URL / WP_INFRA_REPO_URL 不合法")
 if models.hostname != git.hostname or infra.hostname != git.hostname:
     raise SystemExit("两个仓库与 WP_GIT_BASE_URL 必须同主机（Git Proxy 只反代一个上游）")
 

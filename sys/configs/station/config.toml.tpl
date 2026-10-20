@@ -28,7 +28,7 @@ output = "Console"
 output_path = "./logs/"
 
 [web]
-# 容器内端口是应用契约（compose 固定映射 ${STATION_PORT}:8081）。
+# 容器内端口是应用契约（compose 固定映射 ${STATION_HOST_PORT}:8081）。
 host = "0.0.0.0"
 port = 8081
 

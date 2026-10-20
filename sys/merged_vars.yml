@@ -1,67 +1,85 @@
 system:
-- name: WIST_SPC
+- name: CENTER_REGISTRY
   value: ghcr.io/dayu-sec
-- name: VM_SPC
+- name: VM_REGISTRY
   value: quay.io/victoriametrics
-- name: PG_SPC
+- name: PG_REGISTRY
   value: docker.io/library
-- name: STATION_SPC
+- name: STATION_REGISTRY
   value: ghcr.io/wp-labs
-- name: WARP_SPC
+- name: WARPPARSE_REGISTRY
   value: ghcr.io/wp-labs
-- name: NGINX_SPC
+- name: GIT_PROXY_REGISTRY
   value: docker.io/library
-- name: CENTER_TAG
-  value: v0.18.0-alpha
-- name: WEB_TAG
+- name: CENTER_IMAGE_TAG
+  value: v0.19.0-alpha
+- name: CENTER_WEB_IMAGE_TAG
   value: v0.10.2-alpha
-- name: VM_TAG
+- name: VM_IMAGE_TAG
   value: v1.154.0
-- name: STATION_TAG
+- name: STATION_IMAGE_TAG
   value: v0.2.14-alpha
-- name: WARPPARSE_TAG
+- name: WARPPARSE_IMAGE_TAG
   value: 0.30.0-alpha
-- name: NGINX_TAG
+- name: GIT_PROXY_IMAGE_TAG
   value: 1.27-alpine
 - name: GATEWAY_IMAGE
   value: ghcr.io/dayu-sec/wist-gateway:v0.17.0-alpha
-- name: PG_TAG
+- name: PG_IMAGE_TAG
   value: '16'
-- name: CENTER_PORT
+- name: CENTER_BIND_IP
+  value: 0.0.0.0
+- name: CENTER_HOST_PORT
   value: 3100
-- name: WEB_PORT
+- name: CENTER_ADMIN_BIND_IP
+  value: 127.0.0.1
+- name: CENTER_ADMIN_HOST_PORT
+  value: 3102
+- name: WEB_BIND_IP
+  value: 127.0.0.1
+- name: WEB_HOST_PORT
   value: 2443
-- name: PG_PORT
+- name: PG_BIND_IP
+  value: 127.0.0.1
+- name: PG_HOST_PORT
   value: 55432
-- name: VM_PORT
+- name: VM_BIND_IP
+  value: 127.0.0.1
+- name: VM_HOST_PORT
   value: 28429
-- name: STATION_PORT
+- name: STATION_HOST_PORT
   value: 18081
-- name: STATION_DOMAIN
+- name: WEB_WGS_DOMAIN
   value: ''
 - name: STATION_WEB_USER
   value: admin
-- name: GIT_PROXY_PORT
+- name: GIT_PROXY_BIND_IP
+  value: 0.0.0.0
+- name: GIT_PROXY_HOST_PORT
   value: 18082
-- name: WPARSE_PROXY_PORT
+- name: WPARSE_PROXY_BIND_IP
+  value: 127.0.0.1
+- name: WPARSE_PROXY_HOST_PORT
   value: 18083
-- name: RETENTION_PERIOD
+- name: VM_RETENTION_MONTHS
   value: 6
 - name: TZ
   value: Asia/Shanghai
-- name: CENTER_DOMAIN
+- name: WEB_WGC_DOMAIN
   value: center.example.com
-- name: PG_USER
+- name: API_WGC_DOMAIN
+  value: ''
+- name: PG_SUPERUSER
   value: demo
-- name: PG_PASSWORD
+- name: PG_SUPERUSER_PASSWORD
   value: demo
 - name: PG_DB
   value: insight_demo
 - name: STATION_DB_NAME
   value: wp-station
-- name: STATION_MODELS_REPO_URL
+- name: WP_RULES_REPO_URL
   value: https://cnb.cool/dy-sec/jingang-cust/wist/wp-rules
-- name: STATION_INFRA_REPO_URL
+- name: WP_INFRA_REPO_URL
   value: https://cnb.cool/dy-sec/jingang-cust/wist/wp-infra
 - name: WP_GIT_BASE_URL
   value: ''
@@ -87,9 +105,9 @@ system:
   value: ./configs/station
 - name: STATION_KNOWLEDGE_DIR
   value: ./knowledge/station
-- name: STATION_PROJECT_MODELS_DIR
+- name: STATION_MODELS_DIR
   value: ./knowledge/station/wparse__models
-- name: STATION_PROJECT_INFRA_DIR
+- name: STATION_INFRA_DIR
   value: ./knowledge/station/wparse__infra
 - name: GIT_PROXY_CONFIG_DIR
   value: ./configs/git-proxy

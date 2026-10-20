@@ -19,9 +19,15 @@
 #     center_hmac_secret），明文不落盘、不入库。
 [server]
 listen_addr = "0.0.0.0:3100"
+# 管理面**独立 listener**（容器内 3102，宿主只绑回环，浏览器经 web 反代）：
+#   · 只挂 `/api/v1/admin/**` + `/api/v1/version`；
+#   · 网关面（上面的 `listen_addr`）只挂 `/api/v1/gateway/**` + `/api/v1/version`；
+#   · 两侧路由**互斥** —— 管理面永远不在公网 listener 上，即使 admin token 泄露也打不到。
+# 删掉本项 = 回退到旧行为（两者共用 `listen_addr`）。
+admin_addr = "0.0.0.0:3102"
 # 中心对外地址（public_url）**不在这里**：它是**站点现场事实**（现场态），声明写在栈根
 # `identity/center/wist-center-pub.toml`（只写 `${VAR}`、由 **tpl 渲染**，可随版本重渲），
-# 值在同目录 `.env`（scripts/init-center-pub.sh 按缺补齐，取 CENTER_DOMAIN，**永不重渲**）；
+# 值在同目录 `.env`（scripts/init-center-pub.sh 按缺补齐，取 **API_WGC_DOMAIN**，**永不重渲**）；
 # compose 用 WIST_CENTER_PUB_CONFIG 指过去。必须落在控制中心服务器证书的 SAN 内。
 # 网关 ↔ 中心 wire 协议版本（写入网关 config.toml 的 [protocol] version）。
 protocol_version = "1.0"

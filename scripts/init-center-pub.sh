@@ -6,7 +6,7 @@
 # （`sys/configs/center/wist-center-pub.toml.tpl` → `identity/center/wist-center-pub.toml`），
 # 与其它交付物同一套渲染；重渲动不到现场（值不在这里）。
 #
-# 本脚本只做一件事：把 `CENTER_PUBLIC_URL`（= `https://<CENTER_DOMAIN>:<CENTER_PORT>`，
+# 本脚本只做一件事：把 `CENTER_PUBLIC_URL`（= `https://<API_WGC_DOMAIN>:<CENTER_HOST_PORT>`，
 # 端口为 443 时省略）按缺（**键不存在或值为空**）写进 `.env`，**非空一律保留**（现场改过 / 迁移搬来的）。
 #
 # 为什么值与声明分开（docker-compose 口径）：声明里只出现 `${VAR}`，真值在 `.env` ——
@@ -19,8 +19,9 @@
 #   scripts/init-center-pub.sh [现场态目录]     # 默认 identity/center（可用 CENTER_IDENTITY_DIR 覆盖）
 #
 # 读合并后的系统变量（gops 以环境变量注入本子进程；见 sys/setting/vars.yml）：
-#   CENTER_DOMAIN   对外域名
-#   CENTER_PORT     中心后端**宿主**端口（默认 3100）→ `CENTER_PUBLIC_URL = https://<域>:<CENTER_PORT>`
+#   WEB_WGC_DOMAIN   管理面 / Web 域名
+#   API_WGC_DOMAIN 网关面域名（留空 = api.<WEB_WGC_DOMAIN>）；public_url 用它
+#   CENTER_HOST_PORT     中心后端**宿主**端口（默认 3100）→ `CENTER_PUBLIC_URL = https://<域>:<CENTER_HOST_PORT>`
 #   端口必须带上：网关按 public_url **直连**中心后端（mTLS；见 docker-compose「网关直连 3100」）；
 #   443 那个口是 web 前端（终止 TLS、不透传客户端证书）。端口为 443 时省略。
 #
@@ -30,11 +31,15 @@ set -euo pipefail
 DIR="${1:-${CENTER_IDENTITY_DIR:-identity/center}}"
 ENV_FILE="${DIR}/.env"
 
+# public_url 指向**网关面域名**（网关按它直连中心 3100），不是 Web 域名。
+# 留空 = 派生 `api.<WEB_WGC_DOMAIN>`（与 init-center.sh 的 SAN 派生规则一致）。
+PUBLIC_API_URL_DOMAIN="${API_WGC_DOMAIN:-api.${WEB_WGC_DOMAIN:-}}"
+
 command -v python3 >/dev/null 2>&1 || { echo "缺少 python3，无法生成现场态值" >&2; exit 1; }
 mkdir -p "${DIR}"
 
 # 值：按缺补齐（键不存在或值为空才写；非空一律保留）。
-python3 - "${ENV_FILE}" "${CENTER_DOMAIN:-}" "${CENTER_PORT:-3100}" <<'PY'
+python3 - "${ENV_FILE}" "${PUBLIC_API_URL_DOMAIN}" "${CENTER_HOST_PORT:-3100}" <<'PY'
 import os, sys, tempfile
 
 target, domain, port = sys.argv[1:4]

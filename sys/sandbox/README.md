@@ -9,7 +9,7 @@ WarpStation 的规则/OML 是**用户可控输入**。上游默认在 WarpStatio
 | 文件 | 作用 |
 |---|---|
 | `main.go` | 单二进制双角色：`wist-sandbox run` = runner；以 `wparse`/`wpgen`/`wproj` 调用 = client |
-| `Dockerfile` | Go builder → `warp-parse` 基镜像（与 Gateway 的 `WARPPARSE_TAG` 对齐） |
+| `Dockerfile` | Go builder → `warp-parse` 基镜像（与 Gateway 的 `WARPPARSE_IMAGE_TAG` 对齐） |
 
 ## 协议
 
