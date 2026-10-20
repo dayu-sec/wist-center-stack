@@ -2,11 +2,20 @@ test_envs:
   dep_root: ''
   deps: []
 
-# 宿主 bind 挂载权限（`gops sys perms`，gops ≥ 2.7）：
+# 宿主 bind 挂载权限（`gops sys perms`，gops ≥ 2.7；per-service 覆盖需 ≥ 2.9）：
 #   缺省 = 从 compose 派生（服务 `user:` + `volumes.read_only`），不需要配置。
-#   只有两种现场才要写：rootless / userns-remap（容器 uid ↔ 宿主 uid 不等价），
-#   或把 bind source 放到了系统根之外。
-# perms:
+#   需要显式声明的三种现场：
+#     · rootless / userns-remap（容器 uid ↔ 宿主 uid 不等价）→ container_uid/gid
+#     · 镜像默认 root、入口脚本降权（如 postgres → 999 后才读 initdb.d）→ services
+#     · bind source 在系统根之外 → allow_external
+#
+# 以 root 运行的服务会被跳过（root 不受宿主模式限制；`Config.User` 为空 = root）。
+# 本栈给 postgres 声明有效身份，让 `sys/db/initdb` 按 999 对齐（否则它会被当作 root 跳过）。
+perms:
+  services:
+    postgres:
+      uid: 999
+      gid: 999
 #   container_uid: 100999     # rootless / userns-remap 的宿主映射（必须与 gid 同时给）
 #   container_gid: 100999
 #   allow_external:           # 允许对齐系统根之外的 bind source
@@ -108,9 +117,14 @@ backup:
 #   · 变量名由 orion-sec 归一化——`center_admin_token` → `SEC_CENTER_ADMIN_TOKEN`
 #     （大写 + `SEC_` 前缀，已带前缀不重复加），与 `sys/configs/**.tpl` 的 `${SEC_*}` 占位天然对齐；
 #   · 路径必须**相对系统根**，不接受绝对路径 / `..` / 符号链接；声明了就必须存在；
-#   · 文件权限必须只对属主可读（0600 / 0400），否则 gops 拒绝加载。
+#   · 文件模式由 `secrets.mode` 决定：`0600`（默认，只属主可读）/ `0640`（属组 = 容器 gid）。
+#     需要 gops ≥ 2.9；2.8 的 `secrets` 节会拒绝 `mode` 字段。
 secrets:
   file: .wist/sec-value.yml
+  # 与容器共享靠**属组**，不靠改属主：部署账号:容器 gid(999) 0640。
+  # 部署账号按 owner 读、center 按 group 读；gops 不做 chown 到容器 uid、不提权。
+  # 一次性前置（管理员）：部署账号加入 gid 999（`usermod -aG`），`.wist` 用 setgid 继承该组。
+  mode: "0640"
   # 注入范围（最小权限）：键名模式，只支持 `*`，匹配归一化后的 `SEC_*` 名。
   #   run / sec 缺省 = all；localize 缺省 = none（必须显式开）。
   # 这里先声明 localize 的范围；`gops sys localize` 接入 SEC_* 注入后即生效。

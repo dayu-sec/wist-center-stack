@@ -132,7 +132,7 @@ fi
 #   center_db_password 供 center_app 使用（db-init 与中心 DSN 共用）。
 required_center_secrets_hint() {
   cat >&2 <<'EOF'
-请在 <栈根>/.wist/sec-value.yml（权限 600）里提供：
+请在 <栈根>/.wist/sec-value.yml（0640：属主=部署账号、属组=999）里提供：
   center_admin_token: "..."
   center_hmac_secret: "..."
   center_db_password: "..."

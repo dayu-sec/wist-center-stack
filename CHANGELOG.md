@@ -3,6 +3,25 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.2.2-alpha] - 2026-10-20
+
+### 变更
+
+- **密钥改为“组共享”模型（需要 gops ≥ 2.9）**：`.wist/sec-value.yml` 不再要求属主为 root/999，
+  而是 **属主 = 部署账号、属组 = 容器 gid(999)、`secrets.mode: "0640"`**。部署账号按 owner 读、
+  center 按 group 读；`gops sys perms --apply` 只做 chmod/chgrp，**不需要 root、不 chown 到容器 uid**。
+- **`sys-prj.yml: perms.services.postgres { uid: 999, gid: 999 }`**：官方 postgres 以 root 启动、
+  `gosu` 到 999 后才读 `/docker-entrypoint-initdb.d`；该声明让 `sys/db/initdb` 按 999 对齐，
+  避免它被当作 root 服务跳过。
+- `sys localize` 的 gops 版本门禁提升到 **2.9**（2.8 的 `secrets` 节是 `deny_unknown_fields`，
+  会拒绝 `secrets.mode`）。
+
+### 文档
+
+- README 与初始化脚本（`init-center.sh` / `init-station.sh` / `init-web-conf.sh`）的密钥说明从
+  `600` 改为 `0640`（属主=部署账号、属组=999），并补充一次性前置 `usermod -aG 999 <deploy>`
+  与“不 chown 给容器 uid、不提权”的说明。
+
 ## [0.2.1-alpha] - 2026-10-20
 
 ### 新增

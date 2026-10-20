@@ -212,7 +212,8 @@ maybe="$(sec_get_optional "${STACK_ROOT}" some_key)"    # 键缺失 → 空串�
 它转调 `gops sec get --show`（**需 gops ≥ 2.8**），因此路径解析（`sys-prj.yml: secrets.file`）、
 权限/属主/硬链接校验、值类型校验与运行期注入完全同一套规则，脚本侧不再有第二份解析实现。
 
-脚本也**不写**密钥文件：`.wist/sec-value.yml` 完全由运维提供（600），`gops sys localize` 只校验，
+脚本也**不写**密钥文件：`.wist/sec-value.yml` 完全由运维提供（0640：属主=部署账号、属组=容器 gid 999；
+对应 `sys-prj.yml: secrets.mode: "0640"`），`gops sys localize` 只校验，
 不生成、不补键、不迁移、不改 mtime。
 
 例外：`scripts/db-init.sh` 在 **postgres 容器里**执行（容器内没有 gops，且挂载文件属主是宿主账号），
@@ -220,11 +221,16 @@ maybe="$(sec_get_optional "${STACK_ROOT}" some_key)"    # 键缺失 → 空串�
 
 ### 密钥（运维输入）
 
-密钥统一放栈根 `.wist/sec-value.yml`（600），**由运维预先提供**。`gops sys localize` 只做校验：
+> **需要 gops ≥ 2.9.0**：`sys-prj.yml: secrets.mode` 是新字段，2.8.0 的
+> `secrets` 节会拒绝未知字段。升级 gops 后再部署本版本。
+
+密钥统一放栈根 `.wist/sec-value.yml`（0640：属主=部署账号、属组=容器 gid 999），**由运维预先提供**。
+共享靠属组、不靠改属主：部署账号按 owner 读，center(999) 按 group 读；**不需要 root 运行 gops**。
+`gops sys localize` 只做校验：
 缺失或为空直接报错（连同可用的键名一起列出），**不生成、不补键、不迁移、不写文件**。
 
 ```yaml
-# <栈根>/.wist/sec-value.yml（权限 600）
+# <栈根>/.wist/sec-value.yml（权限 0640：属主=部署账号、属组=999）
 center_admin_token: <中心管理面 token>
 center_hmac_secret: <RegistToken 派生密钥>
 center_db_password: <center_app 的 PG 密码>        # 不能是纯数字
@@ -259,7 +265,7 @@ CNB 的权限坑（实测）：token 必须带 **`repo-code:r`**（读）；`wp_
 外部 Git 凭据**只从** `.wist/sec-value.yml` 读取（不要写进 `values/` 或 `vars.yml`）：
 
 ```yaml
-# <栈根>/.wist/sec-value.yml（600）
+# <栈根>/.wist/sec-value.yml（0640：属主=部署账号、属组=999）
 wp_git_push_user: <写账号>
 wp_git_push_token: <写 token>
 wp_git_pub_user: <读账号>
@@ -267,10 +273,17 @@ wp_git_pub_token: <读 token>
 ```
 
 然后跑 `gops sys localize`：`init-station.sh` 从该文件读取这四个键（缺失/为空直接报错），
-渲染 `station.env` 与 `configs/git-proxy/nginx.conf`。文件是 600、已在 `.gitignore` 里，
-不会进 shell history / 进程列表。
+渲染 `station.env` 与 `configs/git-proxy/nginx.conf`。密钥文件是 0640（属主=部署账号、属组=999）、
+已在 `.gitignore` 里，不会进 shell history / 进程列表。
 
-> CI 场景：先用带权限的步骤把密钥文件写到目标机（600），再跑 `gops sys localize`。
+> 一次性前置（管理员）：部署账号加入 gid 999（`usermod -aG 999 <deploy>`），`.wist` 用 setgid
+> 让新建文件继承该组。**不要**把密钥 chown 给 999，也不需要 sudo 运行 gops。
+>
+> 同一份 `sys-prj.yml` 还声明了 `perms.services.postgres: {uid: 999, gid: 999}`：官方 postgres
+> 以 root 启动、`gosu` 到 999 后才读 `/docker-entrypoint-initdb.d`；让 `gops sys perms` 按 999
+> 对齐该目录（否则它会被当作 root 服务跳过）。
+
+> CI 场景：先由部署账号把密钥文件写到目标机（0640，属组=999），再跑 `gops sys localize`。
 > token **不接受**环境变量注入；`wp_git_*_user` 仍可用 `WP_GIT_PUSH_USER` / `WP_GIT_PUB_USER`
 > （来自 `vars.yml`）兜底。
 
@@ -355,7 +368,7 @@ gops sys perms --apply    # 幂等修复
 | 症状 | 日志 | 原因 |
 |---|---|---|
 | center 无限重启 | store 打开失败 / `Permission denied (os error 13)` | `configs/center/state` 属主不是 999 且组不可写 |
-| center 拒启 | `failed to load secrets /secrets/sec-value.yml` | `.wist/sec-value.yml` 是 `600` 且属主不是 999 |
+| center 拒启 | `failed to load secrets /secrets/sec-value.yml` | 密钥权限/属主不符：应为 `部署账号:999 0640` 且 `secrets.mode: "0640"`；或部署账号不在 gid 999 |
 | center 不提供信任根 | 读 `ca/control-center.pem` / `*.key` 失败 | `identity/center` 未对齐（目录 2750 / 私钥 640） |
 | 制品无法写入 | 上传 / 镜像落盘报错 | `artifacts/` 属主是 root（被 `docker compose up` 先建出来了） |
 

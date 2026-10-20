@@ -12,7 +12,8 @@
 #   GXL 字符串字面量**不做转义还原** —— `\"` 会原样留下反斜杠；命令最终由 `/bin/sh -c`
 #   执行，而 Debian/Ubuntu 的 /bin/sh 是 dash，printf 不认 `\"` → 非法 JSON → localize 中断。
 #
-# 密码来源：**只**取栈根 `.wist/sec-value.yml` 的 `station_web_password`（权限 600）；
+# 密码来源：**只**取栈根 `.wist/sec-value.yml` 的 `station_web_password`
+# （权限 0640：属主=部署账号、属组=容器 gid 999；共享靠属组，不需要 root）；
 # 缺失或为空直接报错 —— 脚本不生成、也不写密钥文件。
 #
 # 幂等：JSON / htpasswd 内容不变就不碰 mtime；密码未变时复用同一 salt 校验，不反复重写。
@@ -79,7 +80,7 @@ fi
 }
 password="$(sec_get_optional "${STACK_ROOT}" station_web_password)"
 [[ -n "${password}" ]] || {
-  echo "错误：${SEC_FILE} 的 station_web_password 为空或缺失；请在文件里提供（权限 600）" >&2
+  echo "错误：${SEC_FILE} 的 station_web_password 为空或缺失；请在文件里提供（0640，属组=999）" >&2
   exit 1
 }
 

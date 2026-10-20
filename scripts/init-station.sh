@@ -98,7 +98,7 @@ for pair in "project_models:wparse__models" "project_infra:wparse__infra"; do
 done
 
 # ── 1) 密钥文件：**只校验**，不生成 / 不补键 / 不迁移 ──
-#   密钥是运维输入：`.wist/sec-value.yml`（权限 600；路径/权限/格式由 gops 校验）。
+#   密钥是运维输入：`.wist/sec-value.yml`（0640：属主=部署账号、属组=999；路径/权限/格式由 gops 校验）。
 #   缺什么就报什么 —— 自动生成/补键/迁移会把“没配”伪装成“已配好”，出问题时无从排查。
 # shellcheck source=lib/sec.sh
 # shellcheck disable=SC1091
@@ -106,7 +106,7 @@ done
 
 required_secrets_hint() {
   cat >&2 <<'EOF'
-请在 <栈根>/.wist/sec-value.yml（权限 600）里提供：
+请在 <栈根>/.wist/sec-value.yml（0640：属主=部署账号、属组=999）里提供：
   station_db_password: "..."
   wp_git_push_token: "..."
   wp_git_pub_token: "..."
