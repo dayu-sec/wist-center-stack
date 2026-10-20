@@ -72,13 +72,14 @@ mod operators {
     //    center **固定以 999:999 运行**（compose 里显式钉死），而 Linux 的 bind 挂载**不改属主**
     //    —— 未对齐就是稳定故障：容器写不出 state/ 与 artifacts/、读不到 identity/ 里的私钥与
     //    `.wist/sec-value.yml`（`${SEC_CENTER_*}` 解析失败）。
-    //    用 `gops sys perms --apply`（gops ≥ 2.7，本栈硬要求）：它从 `docker compose config`
-    //    派生「哪些挂载要写、哪些只读」，不需要本仓维护名单 —— 增减挂载只需改 compose。
+    //    用 `gops sys perms --apply`（gops ≥ 2.9，本栈硬要求：`secrets.mode` / `perms.services`）：
+    //    它从 `docker compose config` 派生「哪些挂载要写、哪些只读」，不需要本仓维护名单 ——
+    //    增减挂载只需改 compose。2.8 的 `secrets` 节会拒绝 `mode` 字段。
     //    必须放在 localize **最后**：上面的备料会新建文件（umask 可能使其对容器不可读）。
     //    还必须在 `docker compose up` **之前**：Docker 会把缺失的挂载源目录建成 root:root，
     //    属主一旦是 root，之后的部署账号就写不动了。
     //    幂等：已对齐时不写盘、也不要任何权限；`gops sys perms --check` 可单独做只读自检。
-    gx.cmd ( "gops sys perms --help >/dev/null 2>&1 || { echo '错误：本栈需要 gops >= 2.7（gops sys perms）'; exit 1; }; gops sys perms --apply" );
+    gx.cmd ( "gops --version | awk '{print $NF}' | awk -F. '($1 < 2 || ($1 == 2 && $2 < 9)) { exit 1 }' || { echo '错误：本栈需要 gops >= 2.9（secrets.mode / perms.services）；先 gops self update --channel alpha'; exit 1; }; gops sys perms --apply" );
   }
 
 }
