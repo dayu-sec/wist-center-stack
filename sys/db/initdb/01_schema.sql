@@ -134,11 +134,17 @@ CREATE TABLE IF NOT EXISTS gateway_commands (
   response_status INT,
   response_body TEXT,
   error TEXT,
+  -- 任务执行记录（失败时才带）：网关本机目录 + 有界摘要（写入时已脱敏）。
+  log_dir TEXT,
+  log_excerpt TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_gateway_commands_pending
   ON gateway_commands (gateway_id, state, created_at);
+-- 老库补列（0.19.3 新增）：gwlinkd 失败时把任务日志目录 + 摘要一并回传。
+ALTER TABLE gateway_commands ADD COLUMN IF NOT EXISTS log_dir TEXT;
+ALTER TABLE gateway_commands ADD COLUMN IF NOT EXISTS log_excerpt TEXT;
 
 -- 每网关的 wparse-proxy Bearer token（只存 sha256；明文只发一次）。
 CREATE TABLE IF NOT EXISTS gateway_wparse_tokens (

@@ -3,6 +3,19 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.3.3-alpha] - 2026-10-20
+
+### 变更
+
+- **镜像钉子抬到 `wist-center v0.19.3-alpha` + `wist-center-web v0.10.5-alpha`**：失败任务
+  （升级 / Agent 包 / 知识包 / 规则发布）的日志摘要现在随回执上中心并入库，管理面计划
+  条目下多一个「任务日志」折叠块，展开就是现场。网关侧需 `wist-gwlinkd ≥ 0.15.6`。
+- `sys/db/initdb/01_schema.sql`：`gateway_commands` 加 `log_dir` / `log_excerpt` 两列
+  （`CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ... IF NOT EXISTS`，老库自动补）。
+
+> 现场迁移：`values/<系统名>/sys_value.yml` 里显式钉的 `CENTER_IMAGE_TAG` /
+> `CENTER_WEB_IMAGE_TAG` 需同步到 `v0.19.3-alpha` / `v0.10.5-alpha`。
+
 ## [0.3.2-alpha] - 2026-10-20
 
 ### 变更
