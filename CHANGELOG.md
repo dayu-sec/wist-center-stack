@@ -3,6 +3,20 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.3.1-alpha] - 2026-10-20
+
+### 修复
+
+- **`CENTER_IMAGE_TAG` 默认值提升到 `v0.19.1-alpha`**。0.19.0 的面分离把公网 listener 收窄成
+  `/api/v1/gateway/**` + `/api/v1/version`，漏掉了 `/api/v1/releases/artifact/**` ——
+  结果是 **gwlinkd / 网关侧任何制品下载都 404**（文件在 `artifacts/` 里，但两个 listener
+  都不放行）。升级到这个栈版本前，现场若钉的是 `v0.19.0-alpha`，网关升级、agent 包下发都会失败。
+  0.19.1 已把该前缀纳入网关面白名单；本栈默认值同步，并加了防回归测试：
+  **注册的每一条 `/api/...` 路由都必须被某个 listener 面放行**。
+
+> 现场迁移：`values/<系统名>/sys_value.yml` 里若显式钉了 `CENTER_IMAGE_TAG: v0.19.0-alpha`，
+> 需一并改为 `v0.19.1-alpha`（否则覆盖优先生效，仍会跑旧镜像）。
+
 ## [0.3.0-alpha] - 2026-10-20
 
 ### 新增
