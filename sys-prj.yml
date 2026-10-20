@@ -22,6 +22,9 @@ test_envs:
 # 拆开就不自足（丢私钥 = 签不出新叶 / 客户端证书 = 换锚），所以**整目录进 contract**。
 ignore:
   - configs
+  # WarpStation 知识库工作区（wp-rules / wp-infra 的 git clone）：现场数据、不进交付包。
+  # 与 configs 分开：它是版本化数据，生命周期和备份策略不同。
+  - knowledge/station
   - artifacts
   # 开发态运行物（`dev/svc.sh` 生成：本地 JSON store / pid / 渲染出的配置与 TLS 材料）——
   # 与 `configs` 同一个理由：每部署一份、可重建，不进交付包。
@@ -39,6 +42,8 @@ ignore:
 protect:
   - .env
   - configs
+  # WarpStation 知识库工作区：升级/重建时不能覆盖。
+  - knowledge/station
   - artifacts
   # 开发态运行物：升级/重建同样不能覆盖（与 `ignore` 保持一致）。
   - dev/configs
@@ -93,4 +98,24 @@ contract:
 #   （诊断当声明错误报出）。
 backup:
   - configs
+  # WarpStation 知识库工作区（含 .git）：未推送的提交只能靠这份备份；已推送的以 CNB 为准。
+  - knowledge/station
   - .wist
+
+# 密钥文件：`gops run` / `gops sec` 运行时从这里加载 `SEC_*` 环境变量（值不落配置、不进包）。
+#
+# 只指路、不含值：
+#   · 变量名由 orion-sec 归一化——`center_admin_token` → `SEC_CENTER_ADMIN_TOKEN`
+#     （大写 + `SEC_` 前缀，已带前缀不重复加），与 `sys/configs/**.tpl` 的 `${SEC_*}` 占位天然对齐；
+#   · 路径必须**相对系统根**，不接受绝对路径 / `..` / 符号链接；声明了就必须存在；
+#   · 文件权限必须只对属主可读（0600 / 0400），否则 gops 拒绝加载。
+secrets:
+  file: .wist/sec-value.yml
+  # 注入范围（最小权限）：键名模式，只支持 `*`，匹配归一化后的 `SEC_*` 名。
+  #   run / sec 缺省 = all；localize 缺省 = none（必须显式开）。
+  # 这里先声明 localize 的范围；`gops sys localize` 接入 SEC_* 注入后即生效。
+  expose:
+    run: all
+    localize:
+      - SEC_CENTER_*
+      - SEC_STATION_*

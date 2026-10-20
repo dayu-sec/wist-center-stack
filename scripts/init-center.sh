@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 备料控制中心配置的**渲染值** <配置目录>/wist-center.value.json（localize 里 gx.tpl 的输入），
-# 并在缺失时生成控制中心 CA（信任根 + 服务器证书）、**网关客户端 CA（CA-G）**，以及中心凭据的**密钥文件**。
+# 并在缺失时生成控制中心 CA（信任根 + 服务器证书）、**网关客户端 CA（CA-G）**。
 #
 # 用法：
 #   scripts/init-center.sh <配置目录> <对外域名>
@@ -13,7 +13,7 @@
 #   现场态（站点事实 public_url）分「声明 / 值」：**声明** `identity/center/wist-center-pub.toml`
 #     （只写 `${VAR}`）由 tpl 机制渲染（可重渲）；**值**在同目录 `.env`，由
 #     scripts/init-center-pub.sh 按缺补齐（升级 / 重渲永不覆盖）。
-#   凭据密钥文件 → 栈根 `.wist/sec-value.yml`。
+#   凭据密钥文件（栈根 `.wist/sec-value.yml`）：**运维提供**，本脚本只校验（缺失/为空直接报错）。
 #
 # 环境（gops 把合并后的系统变量以**环境变量**注入 localize 流程）：
 #   CENTER_DOMAIN          对外域名（第 2 参数缺省时用它）；也决定 public_url 与证书 SAN
@@ -23,8 +23,7 @@
 #   GATEWAY_IMAGE          生成网关安装命令用的镜像（写进 [artifacts] gateway_image）
 #
 # 幂等：CA 已存在即跳过（换公章会让所有已分发出去的信任根失效，须显式轮换）；
-#       value.json 内容与当前一致即不碰 mtime；
-#       密钥文件（<栈根>/.wist/sec-value.yml）按键补齐（已有的其它键与已有值一律保留）。
+#       value.json 内容与当前一致即不碰 mtime；密钥文件**只读不写**。
 set -euo pipefail
 
 CONFIG_DIR="${1:-configs/center}"
@@ -40,8 +39,12 @@ IDENTITY_DIR="${CENTER_IDENTITY_DIR:-${STACK_ROOT}/identity/center}"
 
 # 中心凭据的密钥文件：wist-center 配置里写 `${SEC_CENTER_ADMIN_TOKEN}` / `${SEC_CENTER_HMAC_SECRET}`，
 # 启动时由 `WIST_CENTER_SEC_FILE` 指向本文件解析（compose 只读挂 <栈根>/.wist → /secrets）。
-SEC_DIR="${STACK_ROOT}/.wist"
-SEC_FILE="${SEC_DIR}/sec-value.yml"
+SEC_FILE="${STACK_ROOT}/.wist/sec-value.yml"
+
+# 密钥读取统一走 gops（路径/权限/格式校验都在那里）；见 scripts/lib/sec.sh。
+# shellcheck source=lib/sec.sh
+# shellcheck disable=SC1091
+. "${SCRIPT_DIR}/lib/sec.sh"
 
 PG_USER="${PG_USER:-demo}"
 PG_PASSWORD="${PG_PASSWORD:-demo}"
@@ -65,6 +68,15 @@ esac
 
 mkdir -p "${IDENTITY_DIR}" "${CONFIG_DIR}/state" "${CONFIG_DIR}/logs" "${STACK_ROOT}/artifacts"
 
+# 服务器证书 SAN 要同时覆盖中心域名与 WarpStation 域名（同一个 nginx 端口、两个 server_name）。
+# 留空 = 派生 station.<CENTER_DOMAIN>；现场可用 STATION_DOMAIN / CENTER_EXTRA_SANS 覆盖。
+STATION_DOMAIN="${STATION_DOMAIN:-station.${DOMAIN}}"
+EXTRA_SANS="${CENTER_EXTRA_SANS:-}"
+case ",${EXTRA_SANS}," in
+  *",${STATION_DOMAIN},"*) ;;
+  *) EXTRA_SANS="${EXTRA_SANS:+${EXTRA_SANS},}${STATION_DOMAIN}" ;;
+esac
+
 # ── 1) 控制中心 CA（信任根 + 服务器证书）：缺失才生成，落站点身份目录 ──
 # control-center.pem 是分发给所有网关的信任根（control_center.trust_bundle）；
 # 换它 = 换公章，已分发的信任根全部失效 → 非缺失一律不碰，轮换要显式 FORCE=1。
@@ -72,14 +84,13 @@ if [[ -f "${IDENTITY_DIR}/control-center.pem" ]]; then
   note "CA 已存在（${IDENTITY_DIR}/control-center.pem），跳过生成"
 else
   note "生成控制中心 CA / 服务器证书（SAN: ${DOMAIN}）→ ${IDENTITY_DIR}"
-  CENTER_EXTRA_SANS="${CENTER_EXTRA_SANS:-}"
-  "${SCRIPT_DIR}/gen-center-ca.sh" "${IDENTITY_DIR}" "${DOMAIN}" "${CENTER_EXTRA_SANS}"
+  "${SCRIPT_DIR}/gen-center-ca.sh" "${IDENTITY_DIR}" "${DOMAIN}" "${EXTRA_SANS}"
 fi
 
 # ── 1b) 服务器证书（叶）：SAN 必须覆盖对外域名（+ localhost/127.0.0.1）──
 #   前端反代（web 容器，见 sys/docker-compose.yml）用它终止 HTTPS；网关校 init_url 主机名也用它。
 #   **CA 不变** —— 换域名 / 加 SAN 只重签这张叶；幂等（已覆盖就不重签）。
-"${SCRIPT_DIR}/ensure-center-server-cert.sh" "${IDENTITY_DIR}" "${DOMAIN}" "${CENTER_EXTRA_SANS:-}"
+"${SCRIPT_DIR}/ensure-center-server-cert.sh" "${IDENTITY_DIR}" "${DOMAIN}" "${EXTRA_SANS}"
 
 # ── 1c) 网关客户端 CA（CA-G）：缺失才生成 ──
 #   中心用它给「注册入网」的网关签发**客户端证书**（mTLS）。路径不另配：中心默认取同目录的
@@ -114,44 +125,40 @@ fi
 #   （只写 `${VAR}`、可重渲）由 tpl 渲染；**值** `${IDENTITY_DIR}/.env` 由 scripts/init-center-pub.sh
 #   按缺补齐（升级 / 重渲永不覆盖；compose 用 WIST_CENTER_PUB_CONFIG 指过去）。
 
-# ── 2) 中心凭据落**密钥文件**（不进 value.json / 不进渲染出的 toml）──
+# ── 2) 中心凭据：**只校验**，不生成 / 不补键（密钥是运维输入）──
 #   配置里只写 `${SEC_CENTER_ADMIN_TOKEN}` / `${SEC_CENTER_HMAC_SECRET}`，中心启动时用
-#   `WIST_CENTER_SEC_FILE` 从本文件解析（键 center_admin_token / center_hmac_secret
+#   `WIST_CENTER_SEC_FILE` 从密钥文件解析（键 center_admin_token / center_hmac_secret
 #   → orion-sec 规范成 SEC_CENTER_ADMIN_TOKEN / SEC_CENTER_HMAC_SECRET）。
-#   **确保两键存在**：文件缺就建、键缺就补（已有的其它键与已有值一律保留）。
-mkdir -p "${SEC_DIR}"
-[[ -f "${SEC_FILE}" ]] || : >"${SEC_FILE}"
-python3 - "${SEC_FILE}" <<'PY'
-import re, secrets, sys
-path = sys.argv[1]
-with open(path) as handle:
-    text = handle.read()
-# center_admin_token / center_hmac_secret：中心自身凭据；
-# center_db_password：center_app 的 PG 密码（db-init 与 center DSN 共用）。
-for key, prefix in (("center_admin_token", ""), ("center_hmac_secret", ""), ("center_db_password", "c")):
-    if re.search(rf"(?m)^\s*{key}\s*:", text):
-        print(f"  复用已有 {key}：{path}")
-        continue
-    if text and not text.endswith("\n"):
-        text += "\n"
-    value = f"{prefix}{secrets.token_hex(24)}" if prefix else secrets.token_hex(24)
-    text += f"{key}: {value}\n"
-    print(f"  已在密钥文件写入 {key}：{path}")
-with open(path, "w") as handle:
-    handle.write(text)
-PY
-chmod 600 "${SEC_FILE}"
+#   center_db_password 供 center_app 使用（db-init 与中心 DSN 共用）。
+required_center_secrets_hint() {
+  cat >&2 <<'EOF'
+请在 <栈根>/.wist/sec-value.yml（权限 600）里提供：
+  center_admin_token: "..."
+  center_hmac_secret: "..."
+  center_db_password: "..."
+EOF
+}
 
-CENTER_DB_PASSWORD="$(sed -n 's/^[[:space:]]*center_db_password:[[:space:]]*//p' "${SEC_FILE}" | head -n1 | tr -d '\r')"
-case "${CENTER_DB_PASSWORD}" in
-  '""' | "''") CENTER_DB_PASSWORD="" ;;
-  \"*\") CENTER_DB_PASSWORD="${CENTER_DB_PASSWORD#\"}"; CENTER_DB_PASSWORD="${CENTER_DB_PASSWORD%\"}" ;;
-  \'*\') CENTER_DB_PASSWORD="${CENTER_DB_PASSWORD#\'}"; CENTER_DB_PASSWORD="${CENTER_DB_PASSWORD%\'}" ;;
-esac
-[[ -n "${CENTER_DB_PASSWORD}" ]] || {
-  echo "错误：${SEC_FILE} 里没有 center_db_password" >&2
+[[ -f "${SEC_FILE}" ]] || {
+  echo "错误：缺少密钥文件 ${SEC_FILE}" >&2
+  required_center_secrets_hint
   exit 1
 }
+
+# 前两个仅用于校验：运行时由容器自己从密钥文件解析。
+CENTER_ADMIN_TOKEN="$(sec_get_optional "${STACK_ROOT}" center_admin_token)"
+CENTER_HMAC_SECRET="$(sec_get_optional "${STACK_ROOT}" center_hmac_secret)"
+CENTER_DB_PASSWORD="$(sec_get_optional "${STACK_ROOT}" center_db_password)"
+
+missing_secrets=()
+[[ -n "${CENTER_ADMIN_TOKEN}" ]] || missing_secrets+=("center_admin_token")
+[[ -n "${CENTER_HMAC_SECRET}" ]] || missing_secrets+=("center_hmac_secret")
+[[ -n "${CENTER_DB_PASSWORD}" ]] || missing_secrets+=("center_db_password")
+if [[ ${#missing_secrets[@]} -gt 0 ]]; then
+  echo "错误：${SEC_FILE} 缺少（或为空）：${missing_secrets[*]}" >&2
+  required_center_secrets_hint
+  exit 1
+fi
 
 # 纯数字密码会被 WarpStation 的 config crate（try_parsing）当成整数；中心侧虽不走 config crate，
 # 但统一约束，避免运维把同一类密码复制到 station。

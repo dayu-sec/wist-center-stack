@@ -72,18 +72,27 @@ system:
     value: '16'
 
   # 宿主端口（容器内端口是应用契约，写在 compose 里）。
-  # 刻意与 wis-gateway-stack 的 443 / 8443 / 18429 避让 —— 两个栈同机同时运行是常态。
+  # 中心前端与 WarpStation 统一到一个入口：同一个 nginx、同一个端口，按 server_name 分流。
+  # 本机默认 2443；8443 留给 wist-gateway-stack 的 web，避免两栈同机冲突。
   - name: CENTER_PORT
     value: 3100
   - name: WEB_PORT
-    value: 18080
+    value: 2443
   - name: PG_PORT
     value: 55432
   - name: VM_PORT
     value: 28429
-  # WarpStation 控制台（自带前端 + API）。
+  # WarpStation 控制台（自带前端 + API）。仍只绑 127.0.0.1，供本机调试；
+  # 对外统一走 web 的 2443 + station 虚拟主机。
   - name: STATION_PORT
     value: 18081
+  # WarpStation 的对外主机名（与 CENTER_DOMAIN 同级；证书 SAN 会包含它）。
+  # 留空 = init-web-conf.sh 派生 `station.<CENTER_DOMAIN>`；现场可在 values/value.yml 覆盖。
+  - name: STATION_DOMAIN
+    value: ''
+  # WarpStation 虚拟主机的 basic auth 用户名（密码在 .wist/sec-value.yml 的 station_web_password）。
+  - name: STATION_WEB_USER
+    value: admin
   # Center Git Proxy：Gateway 的 wparse 从这里拉取 CNB 仓库。
   # 必须对 **Gateway 主机** 可达。
   - name: GIT_PROXY_PORT
@@ -161,20 +170,25 @@ system:
   # WarpStation 运行期目录（**落在 configs/ 下**：不入库 / 不进包 / 纳入 gops prj backup）。
   - name: STATION_CONFIG_DIR
     value: ./configs/station
-  # WarpStation v0.2.14 的固定双系统布局：<cwd>/gitea/{wparse,wfusion}__{models,infra}
+  # WarpStation 工作区根（**版本化知识库**：wp-rules / wp-infra 的 git 工作副本）。
+  # 独立挂载到容器 `/app/gitea`；上游 v0.2.14 固定布局 `<root>/{wparse,wfusion}__{models,infra}`，
   # CNB 的两个仓库分别落到 wparse__models / wparse__infra。
-  - name: STATION_GITEA_ROOT_DIR
-    value: ./configs/station/gitea
+  # 与 `configs/` 分开：这里是现场数据 + git 历史，生命周期与备份策略都不同。
+  - name: STATION_KNOWLEDGE_DIR
+    value: ./knowledge/station
   - name: STATION_PROJECT_MODELS_DIR
-    value: ./configs/station/gitea/wparse__models
+    value: ./knowledge/station/wparse__models
   - name: STATION_PROJECT_INFRA_DIR
-    value: ./configs/station/gitea/wparse__infra
+    value: ./knowledge/station/wparse__infra
   # Git Proxy 配置目录（nginx.conf 渲染物）。
   - name: GIT_PROXY_CONFIG_DIR
     value: ./configs/git-proxy
   # 前端站点配置：由 sys/configs/web/nginx.conf.tpl 在 localize 时渲染到此（运行物，不入库）
   - name: WEB_NGINX_CONF
     value: ./configs/web/nginx.conf
+  # WarpStation 虚拟主机的 basic auth 密码文件（由 init-web-conf.sh 生成，运行物）
+  - name: STATION_WEB_HTPASSWD
+    value: ./configs/web/htpasswd
   # PostgreSQL 建表脚本目录（随库入库；首次初始化数据卷时执行）
   - name: PG_INITDB_DIR
     value: ./sys/db/initdb

@@ -5,13 +5,14 @@
 #   scripts/init-station.sh [配置目录]        # 默认 configs/station
 #
 # 做的事（设计文档 §9.3）：
-#   1) 建运行期目录：gitea/{wparse,wfusion}__{models,infra} / configs / git-proxy / 身份目录；
-#   2) 确保 `.wist/sec-value.yml` 有 station_db_password（缺失则生成）；
-#      wp_git_push_token / wp_git_pub_token 由运维通过环境注入或直接写 .wist（缺失则留空并告警）；
+#   1) 建工作区目录：<knowledge>/{wparse,wfusion}__{models,infra} / configs / git-proxy / 身份目录；
+#   2) **校验**密钥文件 `.wist/sec-value.yml`（station_db_password / wp_git_push_token /
+#      wp_git_pub_token / wp_git_push_user / wp_git_pub_user）；缺失或为空直接报错——
+#      脚本不生成、不补键、不迁移（密钥是运维输入）；
 #   3) 写 configs/station/station.env（compose env_file）：Git 写账号/token、DB 密码；
 #   4) 写 configs/station/station.value.json（gx.tpl 渲染输入，含 DB 密码）；
 #   5) 写 configs/git-proxy/git-proxy.value.json（含 Git 读凭据；600）；
-#   6) 预克隆两个外部 Git 私有仓库到 gitea/wparse__models、gitea/wparse__infra（已存在则复用）；
+#   6) 预克隆两个外部 Git 私有仓库到 <knowledge>/wparse__models、<knowledge>/wparse__infra（已存在则复用）；
 #   7) 确保 identity/station/warparse-ca.pem 存在（默认复制中心 CA；已存在不覆盖）；
 #   8) 生成 configs/station/gateway-wparse-snippet.toml（Gateway 对接片段）。
 #
@@ -19,10 +20,9 @@
 #   STATION_DB_NAME / STATION_MODELS_REPO_URL / STATION_INFRA_REPO_URL / STATION_LOG_LEVEL
 #   GIT_PROXY_PUBLIC_BASE / GIT_PROXY_ALLOW_CIDR / CENTER_DOMAIN / GIT_PROXY_PORT
 #   WP_GIT_BASE_URL / WP_GIT_PUSH_USER / WP_GIT_PUB_USER / WP_GIT_AUTH_HEADER
-#   WP_GIT_PUSH_TOKEN / WP_GIT_PUB_TOKEN（密钥，也可写 .wist 同名键）
 #   STATION_SKIP_REPO_CHECK 1 = 跳过分支/目录结构校验（只用于排障）
 #
-# 幂等：DB 密码只生成一次；token 有环境值才覆盖；value.json / env / 片段内容不变就不碰 mtime；
+# 幂等：密钥文件**只读不写**；value.json / env / 片段内容不变就不碰 mtime；
 #       已有 git 工作副本一律复用（只校正 origin URL），不覆盖现场改动。
 set -euo pipefail
 
@@ -49,10 +49,21 @@ SEC_FILE="${SEC_DIR}/sec-value.yml"
 CENTER_IDENTITY_DIR="${STACK_ROOT}/identity/center"
 STATION_IDENTITY_DIR="${STACK_ROOT}/identity/station"
 GIT_PROXY_CONFIG_DIR="${STACK_ROOT}/configs/git-proxy"
-# v0.2.14 固定布局：gitea/<system>__<area>。
-STATION_GITEA_ROOT="${CONFIG_DIR}/gitea"
-MODELS_DIR="${STATION_GITEA_ROOT}/wparse__models"
-INFRA_DIR="${STATION_GITEA_ROOT}/wparse__infra"
+
+abs_path() {
+  case "$1" in
+    /*) printf '%s' "$1" ;;
+    *) printf '%s/%s' "${STACK_ROOT}" "${1#./}" ;;
+  esac
+}
+
+# v0.2.14 固定布局：<knowledge>/{wparse,wfusion}__{models,infra}。
+# 工作区根是**独立挂载点**，由 vars/values 的 STATION_KNOWLEDGE_DIR 决定，
+# 不从 CONFIG_DIR 推导（configs/ 是配置，工作区是版本化知识库，两者生命周期不同）。
+STATION_KNOWLEDGE_ROOT="$(abs_path "${STATION_KNOWLEDGE_DIR:?STATION_KNOWLEDGE_DIR is required（在 vars.yml / values/value.yml 设置）}")"
+STATION_KNOWLEDGE_ROOT="${STATION_KNOWLEDGE_ROOT%/}"
+MODELS_DIR="$(abs_path "${STATION_PROJECT_MODELS_DIR:-${STATION_KNOWLEDGE_ROOT}/wparse__models}")"
+INFRA_DIR="$(abs_path "${STATION_PROJECT_INFRA_DIR:-${STATION_KNOWLEDGE_ROOT}/wparse__infra}")"
 
 note() { echo "  $*"; }
 warn() { echo "  ⚠ $*" >&2; }
@@ -66,10 +77,11 @@ fi
 
 mkdir -p \
   "${CONFIG_DIR}" \
-  "${STATION_GITEA_ROOT}/wparse__models" \
-  "${STATION_GITEA_ROOT}/wparse__infra" \
-  "${STATION_GITEA_ROOT}/wfusion__models" \
-  "${STATION_GITEA_ROOT}/wfusion__infra" \
+  "${STATION_KNOWLEDGE_ROOT}" \
+  "${MODELS_DIR}" \
+  "${INFRA_DIR}" \
+  "${STATION_KNOWLEDGE_ROOT}/wfusion__models" \
+  "${STATION_KNOWLEDGE_ROOT}/wfusion__infra" \
   "${SEC_DIR}" \
   "${STATION_IDENTITY_DIR}" \
   "${GIT_PROXY_CONFIG_DIR}"
@@ -77,7 +89,7 @@ mkdir -p \
 # 迁移旧布局：v0.2.14 之前用 configs/station/project_{models,infra}。
 for pair in "project_models:wparse__models" "project_infra:wparse__infra"; do
   old="${CONFIG_DIR}/${pair%%:*}"
-  new="${STATION_GITEA_ROOT}/${pair##*:}"
+  new="${STATION_KNOWLEDGE_ROOT}/${pair##*:}"
   if [[ -e "${old}" && ! -e "${new}/.git" && -z "$(ls -A "${new}" 2>/dev/null || true)" ]]; then
     note "迁移旧工作副本：${old} → ${new}"
     rmdir "${new}" 2>/dev/null || true
@@ -85,117 +97,49 @@ for pair in "project_models:wparse__models" "project_infra:wparse__infra"; do
   fi
 done
 
-# ── 1) 密钥文件：DB 密码自动生成；Git 读写 token 由运维注入 ──
-[[ -f "${SEC_FILE}" ]] || : >"${SEC_FILE}"
-python3 - "${SEC_FILE}" "${WP_GIT_PUSH_TOKEN:-}" "${WP_GIT_PUB_TOKEN:-}" <<'PY'
-import re, secrets, sys
+# ── 1) 密钥文件：**只校验**，不生成 / 不补键 / 不迁移 ──
+#   密钥是运维输入：`.wist/sec-value.yml`（权限 600；路径/权限/格式由 gops 校验）。
+#   缺什么就报什么 —— 自动生成/补键/迁移会把“没配”伪装成“已配好”，出问题时无从排查。
+# shellcheck source=lib/sec.sh
+# shellcheck disable=SC1091
+. "${SCRIPT_DIR}/lib/sec.sh"
 
-path, write_token, read_token = sys.argv[1:4]
-
-
-def read_text():
-    with open(path) as handle:
-        return handle.read()
-
-
-def get_value(text, key):
-    match = re.search(rf"(?m)^\s*{key}\s*:\s*(.*)$", text)
-    if not match:
-        return ""
-    value = match.group(1).strip()
-    if value in ('""', "''"):
-        return ""
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
-        value = value[1:-1]
-    return value
-
-
-def ensure_generated(text, key, prefix):
-    if re.search(rf"(?m)^\s*{key}\s*:", text):
-        print(f"  复用已有 {key}")
-        return text
-    if text and not text.endswith("\n"):
-        text += "\n"
-    text += f"{key}: {prefix}{secrets.token_hex(24)}\n"
-    print(f"  已生成 {key}")
-    return text
-
-
-def set_value(text, key, value):
-    pattern = re.compile(rf"(?m)^(\s*{key}\s*:\s*)(.*)$")
-    match = pattern.search(text)
-    if match:
-        return text[: match.start(2)] + value + text[match.end(2) :]
-    if text and not text.endswith("\n"):
-        text += "\n"
-    return text + f"{key}: {value}\n"
-
-
-def ensure_provided(text, key, value):
-    if re.search(rf"(?m)^\s*{key}\s*:", text):
-        if value:
-            text = set_value(text, key, value)
-            print(f"  已更新 {key}（来自环境）")
-        else:
-            print(f"  复用已有 {key}")
-        return text
-    if value:
-        text = set_value(text, key, value)
-        print(f"  已写入 {key}（来自环境）")
-    else:
-        text = set_value(text, key, "")
-        print(f"  ⚠ {key} 未提供（环境变量为空）；相关链路会失败，见脚本头部说明")
-    return text
-
-
-text = read_text()
-text = ensure_generated(text, "station_db_password", "s")
-
-# 旧键迁移：station_git_password / cnb_git_read_token → 通用名。
-legacy_push = get_value(text, "station_git_password")
-if legacy_push and not get_value(text, "wp_git_push_token"):
-    text = set_value(text, "wp_git_push_token", legacy_push)
-    print("  已迁移 station_git_password → wp_git_push_token")
-legacy_pub = get_value(text, "cnb_git_read_token")
-if legacy_pub and not get_value(text, "wp_git_pub_token"):
-    text = set_value(text, "wp_git_pub_token", legacy_pub)
-    print("  已迁移 cnb_git_read_token → wp_git_pub_token")
-
-# 用户名不是密钥，但放在同一文件便于现场维护；缺失时留空，回退到 vars。
-for key in ("wp_git_push_user", "wp_git_pub_user"):
-    if not re.search(rf"(?m)^\s*{key}\s*:", text):
-        text = set_value(text, key, "")
-
-text = ensure_provided(text, "wp_git_push_token", write_token.strip())
-text = ensure_provided(text, "wp_git_pub_token", read_token.strip())
-with open(path, "w") as handle:
-    handle.write(text)
-PY
-chmod 600 "${SEC_FILE}"
-
-get_secret() {
-  local value
-  value="$(sed -n "s/^[[:space:]]*$1:[[:space:]]*//p" "${SEC_FILE}" | head -n1 | tr -d '\r')"
-  case "${value}" in
-    '""' | "''") value="" ;;
-    \"*\") value="${value#\"}"; value="${value%\"}" ;;
-    \'*\') value="${value#\'}"; value="${value%\'}" ;;
-  esac
-  printf '%s\n' "${value}"
+required_secrets_hint() {
+  cat >&2 <<'EOF'
+请在 <栈根>/.wist/sec-value.yml（权限 600）里提供：
+  station_db_password: "..."
+  wp_git_push_token: "..."
+  wp_git_pub_token: "..."
+  wp_git_push_user: "..."
+  wp_git_pub_user: "..."
+EOF
 }
 
-STATION_DB_PASSWORD="$(get_secret station_db_password)"
-GIT_PUSH_TOKEN="$(get_secret wp_git_push_token)"
-GIT_PUB_TOKEN="$(get_secret wp_git_pub_token)"
-GIT_PUSH_USER="$(get_secret wp_git_push_user)"
-GIT_PUB_USER="$(get_secret wp_git_pub_user)"
+[[ -f "${SEC_FILE}" ]] || {
+  echo "错误：缺少密钥文件 ${SEC_FILE}" >&2
+  required_secrets_hint
+  exit 1
+}
+
+STATION_DB_PASSWORD="$(sec_get_optional "${STACK_ROOT}" station_db_password)"
+GIT_PUSH_TOKEN="$(sec_get_optional "${STACK_ROOT}" wp_git_push_token)"
+GIT_PUB_TOKEN="$(sec_get_optional "${STACK_ROOT}" wp_git_pub_token)"
+GIT_PUSH_USER="$(sec_get_optional "${STACK_ROOT}" wp_git_push_user)"
+GIT_PUB_USER="$(sec_get_optional "${STACK_ROOT}" wp_git_pub_user)"
 [[ -n "${GIT_PUSH_USER}" ]] || GIT_PUSH_USER="${WP_GIT_PUSH_USER:-}"
 [[ -n "${GIT_PUB_USER}" ]] || GIT_PUB_USER="${WP_GIT_PUB_USER:-}"
 
-[[ -n "${STATION_DB_PASSWORD}" ]] || {
-  echo "错误：${SEC_FILE} 缺少 station_db_password" >&2
+missing_secrets=()
+[[ -n "${STATION_DB_PASSWORD}" ]] || missing_secrets+=("station_db_password")
+[[ -n "${GIT_PUSH_TOKEN}" ]] || missing_secrets+=("wp_git_push_token")
+[[ -n "${GIT_PUB_TOKEN}" ]] || missing_secrets+=("wp_git_pub_token")
+[[ -n "${GIT_PUSH_USER}" ]] || missing_secrets+=("wp_git_push_user")
+[[ -n "${GIT_PUB_USER}" ]] || missing_secrets+=("wp_git_pub_user")
+if [[ ${#missing_secrets[@]} -gt 0 ]]; then
+  echo "错误：${SEC_FILE} 缺少（或为空）：${missing_secrets[*]}" >&2
+  required_secrets_hint
   exit 1
-}
+fi
 
 # 纯数字密码会被 WarpStation 的 config crate（try_parsing）当成整数，反序列化到 String 会失败。
 case "${STATION_DB_PASSWORD}" in
@@ -206,10 +150,6 @@ case "${STATION_DB_PASSWORD}" in
     ;;
 esac
 
-[[ -n "${GIT_PUSH_TOKEN}" ]] || warn "wp_git_push_token 为空：WarpStation 无法 push（请写 .wist 或 WP_GIT_PUSH_TOKEN）"
-[[ -n "${GIT_PUB_TOKEN}" ]] || warn "wp_git_pub_token 为空：Git Proxy 无法拉取私有仓库（请写 .wist 或 WP_GIT_PUB_TOKEN）"
-[[ -n "${GIT_PUSH_USER}" ]] || warn "wp_git_push_user 为空：预克隆/push 的用户名为空"
-[[ -z "${GIT_PUB_USER}" && -n "${GIT_PUB_TOKEN}" ]] && warn "wp_git_pub_user 为空：Git Proxy Basic Auth 用户名为空"
 case "${GIT_PUSH_TOKEN}${GIT_PUB_TOKEN}" in
   *$'\n'* | *$'\r'*)
     echo "错误：Git token 含换行，无法写入 env 文件" >&2
@@ -295,8 +235,9 @@ clone_or_update() {
       exit 1
     fi
     if [[ -z "${CLONE_TOKEN}" ]]; then
-      warn "${label}：没有读 token，跳过预克隆（首次 clone 需要凭据）"
-      return 0
+      # 密钥已在第 1) 步校验为非空；走到这里说明调用路径被改坏了 —— fail-closed。
+      echo "错误：${label} 没有读 token，无法预克隆（首次 clone 需要凭据）" >&2
+      exit 1
     fi
     note "${label}：克隆 ${url} → ${dest}"
     if ! git_net "${dest%/*}" clone --origin origin "${url}" "${dest}"; then

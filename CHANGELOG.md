@@ -3,6 +3,27 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.2.1-alpha] - 2026-10-20
+
+### 新增
+
+- **统一 Web 入口**：中心与 WarpStation 共用一个 nginx、一个端口（`WEB_PORT=2443`），
+  按 `server_name` 分流；WarpStation 虚拟主机带 basic auth。证书 SAN 自动包含两个域名。
+- **`sys-prj.yml: secrets` 声明密钥文件**，`gops run` / `gops sec` 共用一套加载与校验；
+  `secrets.expose` 按消费方（`run` / `localize` / `sec`）限定注入范围。
+- **`scripts/lib/sec.sh`**：宿主机侧脚本读取密钥的唯一入口（转调 `gops sec get`），
+  删掉 4 份手写 YAML 解析。
+
+### 变更
+
+- **WarpStation 工作区独立挂载**：`knowledge/station/`（原 `configs/station/gitea/`），
+  不再落在 `configs/` 下；首次为空时由 `init-station.sh` 从外部 Git 克隆。
+- **密钥是运维输入**：`center_admin_token` / `center_hmac_secret` / `center_db_password` /
+  `station_db_password` / `station_web_password` 与 Git 读写 token 必须在
+  `.wist/sec-value.yml`（600）预先提供；`gops sys localize` 只校验，缺失/为空直接报错，
+  不再生成、补键、迁移或改写文件。
+- `STATION_GITEA_ROOT_DIR` → **`STATION_KNOWLEDGE_DIR`**（默认 `./knowledge/station`）。
+
 ## [0.2.0-alpha] - 2026-10-19
 
 ### 新增

@@ -30,13 +30,17 @@ system:
 - name: CENTER_PORT
   value: 3100
 - name: WEB_PORT
-  value: 18080
+  value: 2443
 - name: PG_PORT
   value: 55432
 - name: VM_PORT
   value: 28429
 - name: STATION_PORT
   value: 18081
+- name: STATION_DOMAIN
+  value: ''
+- name: STATION_WEB_USER
+  value: admin
 - name: GIT_PROXY_PORT
   value: 18082
 - name: WPARSE_PROXY_PORT
@@ -81,15 +85,17 @@ system:
   value: ./artifacts
 - name: STATION_CONFIG_DIR
   value: ./configs/station
-- name: STATION_GITEA_ROOT_DIR
-  value: ./configs/station/gitea
+- name: STATION_KNOWLEDGE_DIR
+  value: ./knowledge/station
 - name: STATION_PROJECT_MODELS_DIR
-  value: ./configs/station/gitea/wparse__models
+  value: ./knowledge/station/wparse__models
 - name: STATION_PROJECT_INFRA_DIR
-  value: ./configs/station/gitea/wparse__infra
+  value: ./knowledge/station/wparse__infra
 - name: GIT_PROXY_CONFIG_DIR
   value: ./configs/git-proxy
 - name: WEB_NGINX_CONF
   value: ./configs/web/nginx.conf
+- name: STATION_WEB_HTPASSWD
+  value: ./configs/web/htpasswd
 - name: PG_INITDB_DIR
   value: ./sys/db/initdb

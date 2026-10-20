@@ -62,7 +62,7 @@ mod operators {
     //    渲染值必须走脚本，不能在这里 printf：GXL 字符串**不还原 `\"`**，而 Ubuntu 的 /bin/sh 是
     //    dash（printf 不认 `\"`，会把反斜杠写进文件）→ 非法 JSON → gx.tpl 报 parse json data file。
     //    macOS 上 sh 是 bash（printf 吃掉反斜杠）所以看不出问题。详见脚本头部注释。
-    gx.cmd ( "./scripts/init-web-conf.sh $(printenv CENTER_DOMAIN)" );
+    gx.cmd ( "./scripts/init-web-conf.sh $(printenv CENTER_DOMAIN) $(printenv STATION_DOMAIN)" );
     gx.tpl (
       tpl  : "./sys/configs/web/nginx.conf.tpl",
       dst  : "./configs/web/nginx.conf",

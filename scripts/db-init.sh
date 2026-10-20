@@ -21,6 +21,11 @@ STATION_DB_NAME="${STATION_DB_NAME:?STATION_DB_NAME required}"
 ADMIN_ROLE="${PGUSER:?PGUSER required}"
 
 get_secret() {
+  # ⚠ **本脚本在容器里跑**（compose 的 db-init 服务）：
+  #   · 容器内没有 gops，也不该为一个一次性初始化任务装一份；
+  #   · 挂载进来的 /secrets 属主是宿主部署账号，与容器 uid 不同，
+  #     gops 的属主校验会（正确地）拒绝。
+  # 所以这里保留最小解析；宿主机侧的脚本统一走 scripts/lib/sec.sh → `gops sec get`。
   local value
   value="$(sed -n "s/^[[:space:]]*$1:[[:space:]]*//p" "${SEC_FILE}" | head -n1 | tr -d '\r')"
   case "${value}" in
