@@ -3,6 +3,15 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.2.3-alpha] - 2026-10-20
+
+### 变更
+
+- **`sys localize` 的 gops 版本门禁提升到 2.9**：`secrets.mode` / `perms.services` 需要 gops ≥ 2.9；
+  旧版（2.8）会在解析 `sys-prj.yml` 时因未知字段 `mode` 失败。门禁现在直接检查 `gops --version`，
+  并提示 `gops self update --channel alpha`。
+- 与 0.2.2 的密钥组共享模型配套；无配置/行为变化。
+
 ## [0.2.2-alpha] - 2026-10-20
 
 ### 变更
