@@ -3,6 +3,17 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.3.4-alpha] - 2026-10-20
+
+### 变更
+
+- **镜像钉子抬到 `wist-center v0.19.4-alpha` + `wist-center-web v0.10.6-alpha`**：失败任务的
+  日志摘要除目录外还带 **任务 ID**，管理面在「任务日志」标题上直接显示 —— 同一份计划重试
+  会换 `task_id`，只有目录路径容易看串。
+- `sys/db/initdb/01_schema.sql`：`gateway_commands` 补 `task_id` 列（`IF NOT EXISTS`）。
+
+> 网关侧需 `wist-gwlinkd ≥ 0.15.7`。
+
 ## [0.3.3-alpha] - 2026-10-20
 
 ### 变更
