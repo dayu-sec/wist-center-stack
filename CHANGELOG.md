@@ -3,6 +3,31 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.3.6-alpha] - 2026-10-21
+
+### 变更
+
+- **中心组件跟随上游**：`CENTER_IMAGE_TAG` → `v0.19.5-alpha`、`CENTER_WEB_IMAGE_TAG` → `v0.10.7-alpha`。
+  网关详情页与接口新增 **gwlinkd 自身版本**（与网关容器版本、gops / gx 并列），自更新进度能在页面与
+  `gateway_gwlinkd_info` 指标上直接核对；中心落库新增 `gwlinkd_version` 列（重启自动补列）。
+
+### 修复
+
+- **镜像同步脚本可用了**：`dev/push-images.sh` 改用 `--project-directory`，让 compose 的相对路径按
+  栈根解析（此前会去找 `sys/configs/...`，缺 station.env 就直接报错）。
+- **WarpStation 沙盒 / 工具链**：随栈交付 `sys/station/default_configs` 并挂进容器
+  （`/app/default_configs`）；工具链复制补上 `wpadm / wfadm / wprescue`；去掉从未生效的
+  `WARP_STATION_SKIP_SANDBOX`。
+
+### 移除
+
+- **`CENTER_EXTRA_SANS` 配置项**：证书 SAN 只从 `CENTER_DOMAIN` / `API_WGC_DOMAIN` / `WEB_WGS_DOMAIN`
+  （+ localhost / 127.0.0.1）派生。现场若用其它名字访问中心，应让那个名字成为上述域名之一，
+  而不是再加一个补充列表。
+
+  ⚠️ **升级注意**：本项删除后，下一次 `init-center.sh` 会按新的 SAN 集合**重签叶证书**（CA 不变）。
+  若现场正用额外域名访问中心，请先把网关侧地址改成证书内已有的域名，再执行。
+
 ## [0.3.5-alpha] - 2026-10-21
 
 ### 变更
