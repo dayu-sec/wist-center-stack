@@ -16,7 +16,7 @@
 # 一次性任务（无端口）：
 #   db-init                以 db_admin 幂等创建 center_app / station_app 角色与库，收紧 CONNECT
 #   db-schema              以 center_app 幂等套一遍 sys/db/initdb/01_schema.sql
-#   warp-toolchain         把 wparse/wpgen/wproj 复制进命名卷（WarpStation 直接执行；v1 单容器）
+#   warp-toolchain         把 wparse/wpgen/wproj/wpadm 复制进命名卷（WarpStation 直接执行；v1 单容器）
 #
 # 容器内端口是**应用契约**，写死（3100/3101/443/5432/8428/8081/8443）；宿主端口才是变量。
 #
@@ -211,11 +211,17 @@ services:
       - |
         set -e
         mkdir -p /toolchain
-        for bin in wparse wpgen wproj; do
-          cp -f "/usr/local/bin/$$bin" "/toolchain/$$bin"
-          chmod 0755 "/toolchain/$$bin"
+        # 上游 v0.2.14 的沙盒预检查会跑 `wpadm --version` / `wpadm check`（wparse）
+        # 与 `wfadm --version` / `wfadm check`（wfusion）；镜像里 `wproj` 是 `wpadm` 的软链，
+        # 只拷 3 个老名字会让「命令检查」直接失败。按镜像实际内容全拷，缺的就跳过。
+        for bin in wparse wpgen wproj wpadm wfadm wprescue; do
+          if [ -x "/usr/local/bin/$$bin" ]; then
+            cp -f "/usr/local/bin/$$bin" "/toolchain/$$bin"
+            chmod 0755 "/toolchain/$$bin"
+          fi
         done
         echo "warp toolchain ready: /toolchain"
+        ls -la /toolchain
     volumes:
       - station-toolchain:/toolchain
 
@@ -274,11 +280,14 @@ services:
       WP_STATION__ASSIST__BASE_URL: ""
       WP_STATION__FEATURES__DATA_COLLECT_URL: ""
       WP_STATION__WARPARSE__CA_FILE: /app/tls/CA.crt
-      # TODO(dev-only): 开发态跳过沙盒验证，先把发布链路跑通。
-      # 生产必须去掉（沙盒是“先验后发”的唯一门槛）。
-      WARP_STATION_SKIP_SANDBOX: "1"
+      # ⚠ 无效变量：上游 v0.2.14/v0.2.15 只在 tests/common 里读 WARP_STATION_SKIP_SANDBOX，
+      # 运行时代码没有实现“跳过沙盒”，留着不会生效（沙盒阶段照样跑）。保守起见不再声明。
     volumes:
       - ${STATION_CONFIG_DIR}/config.toml:/app/config/config.toml:ro
+      # 沙盒默认配置（编译进二进制的同一份，按上游 tag 解包到 sys/station/default_configs）：
+      # 沙盒准备阶段会用它整目录替换 topology/sinks（避免连真实下游），`runtime` 也由它补。
+      # 缺失时上游报“沙盒覆盖 wparse sinks 失败: 未找到 default_configs 目录”。
+      - ./sys/station/default_configs:/app/default_configs:ro
       # v0.2.14 固定布局：/app/gitea/{wparse,wfusion}__{models,infra}
       # 宿主机工作区根：STATION_KNOWLEDGE_DIR（默认 ./knowledge/station）。
       # CNB 工作副本在 wparse__models / wparse__infra；wfusion__* 由 WarpStation 自动补齐。
