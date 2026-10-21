@@ -298,7 +298,7 @@ else
 fi
 
 # ── 2) 让 Compose 解析镜像（唯一源，别在这里重造 ${VAR} 规则）────────────────
-IMAGES_RAW="$(cd "${STACK_ROOT}" && "${DC[@]}" --env-file "${ENV_FILE}" -f "${COMPOSE}" config --images)"
+IMAGES_RAW="$(cd "${STACK_ROOT}" && "${DC[@]}" --env-file "${ENV_FILE}" -f "${COMPOSE}" --project-directory "${STACK_ROOT}" config --images)"
 # `config --images` 的返回顺序不保证稳定 —— 去重 + 排序，让计划输出可复现。
 IMAGES="$(printf '%s\n' "${IMAGES_RAW}" | awk 'NF && !seen[$0]++' | sort)"
 [[ -n "${IMAGES}" ]] || die "compose 没解析出任何镜像（检查 ${COMPOSE} 的 image: 段）"
