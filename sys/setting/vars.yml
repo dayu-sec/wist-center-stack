@@ -46,7 +46,7 @@ system:
   - name: CENTER_IMAGE_TAG
     value: v0.19.5-alpha
   - name: CENTER_WEB_IMAGE_TAG
-    value: v0.10.7-alpha
+    value: v0.10.8-alpha
   # 观测镜像 tag（源前缀见 VM_REGISTRY）
   - name: VM_IMAGE_TAG
     value: v1.154.0

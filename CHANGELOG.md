@@ -3,6 +3,14 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.3.7-alpha] - 2026-10-21
+
+### 变更
+
+- **中心前端跟随上游**：`CENTER_WEB_IMAGE_TAG` → `v0.10.8-alpha`（中心后端不变，仍 `v0.19.5-alpha`）。
+  该版本修复**网关态势页整页白屏**：CPU / 内存的历史序列整列为空时，趋势行把空数组当成有值、
+  直接取 `points[0].x` 抛 `TypeError`，React 卸载整棵组件树 —— 表现为页面闪一下变空白。
+
 ## [0.3.6-alpha] - 2026-10-21
 
 ### 变更
