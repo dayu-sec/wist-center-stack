@@ -3,6 +3,21 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.3.8-alpha] - 2026-10-21
+
+### 变更
+
+- **中心后端 `CENTER_IMAGE_TAG` → `v0.19.6-alpha`**：网关控制命令（体检 / 重启 gateway / 重启 gwlinkd）
+  的管理面（`POST/GET …/diagnose`、`POST …/restart`、`GET …/commands/{id}`）。
+- **中心前端 `CENTER_WEB_IMAGE_TAG` → `v0.10.9-alpha`**：网关详情页「运行时操作」面板
+  （三个按钮 + 体检报告 + 重启进度）。
+
+### 升级注意
+
+- 控制命令的**执行侧**是 gwlinkd：栈升级后还需要中心侧升级到 `wist-gwlinkd 0.16.2+`，否则命令会停在
+  `pending` 直到 60s 后变 `expired`。
+- `gateway_commands` 新增 `kind` 列：中心启动时随 schema 幂等补列，无需手工 DDL。
+
 ## [0.3.7-alpha] - 2026-10-21
 
 ### 变更
