@@ -20,7 +20,7 @@ system:
 - name: STATION_IMAGE_TAG
   value: v0.2.14-alpha
 - name: WARPPARSE_IMAGE_TAG
-  value: 0.30.0-alpha
+  value: 0.31.1-alpha
 - name: GIT_PROXY_IMAGE_TAG
   value: 1.27-alpine
 - name: GATEWAY_IMAGE

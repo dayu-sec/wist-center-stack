@@ -3,6 +3,14 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.3.5-alpha] - 2026-10-21
+
+### 变更
+
+- **WarpStation 工具链基镜像 `WARPPARSE_IMAGE_TAG` `0.30.0-alpha` → `0.31.1-alpha`**，
+  与 `wist-gateway-stack 0.1.52` 对齐。两边必须同版本：规则在网关上跑（`WPARSE_TAG`），
+  在 WarpStation 里校验 / 生成（本变量）；错版本会让「校验通过但发布后跑不起来」。
+
 ## [0.3.4-alpha] - 2026-10-20
 
 ### 变更
