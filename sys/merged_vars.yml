@@ -12,9 +12,9 @@ system:
 - name: GIT_PROXY_REGISTRY
   value: docker.io/library
 - name: CENTER_IMAGE_TAG
-  value: v0.19.5-alpha
+  value: v0.19.6-alpha
 - name: CENTER_WEB_IMAGE_TAG
-  value: v0.10.8-alpha
+  value: v0.10.9-alpha
 - name: VM_IMAGE_TAG
   value: v1.154.0
 - name: STATION_IMAGE_TAG
