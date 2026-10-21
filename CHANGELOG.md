@@ -3,6 +3,19 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.3.9-alpha] - 2026-10-21
+
+### 变更
+
+- **中心后端 `CENTER_IMAGE_TAG` → `v0.19.7-alpha`**：升级计划一律带 `artifact_sha256`（与 `artifact_url` 同源）。
+  宿主工具（`galaxy-ops` / `galaxy-flow`）是 gwlinkd 就地把二进制覆盖掉，制品名不是内容寻址 ——
+  没有摘要就没有内容校验，而 gops 又是后续升级的执行者。
+
+### 升级注意
+
+- 网关侧配合 `wist-gwlinkd 0.16.3+` 才能把摘要用到 gops 路径的取件校验；不升也能跑（摘要“有才核”）。
+- 发布记录有摘要但与制品字节不符时，升级会在取件阶段失败（fail-closed）。
+
 ## [0.3.8-alpha] - 2026-10-21
 
 ### 变更
