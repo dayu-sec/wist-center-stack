@@ -92,7 +92,7 @@ wist-center-stack/
     init-web-conf.sh        # 前端站点配置的渲染值（幂等；域名取 WEB_WGC_DOMAIN）
     check-stack.sh          # 栈级配置检查薄壳（选本机 triple 的预编译件；开发态回落 cargo run）
     db-init.sh              # 一次性：创建 center_app 角色与库，收紧 CONNECT
-  tools/stackcheck/          # 栈级检查器（Rust，lib + bin；判据参数化在 StackProfile）
+  tools/stackcheck/          # 本栈 profile + TLS 策略（通用引擎在 wist-stack-tools/stackcheck-core）
   dev/                      # 开发态：本地二进制 + vite（单一入口 svc.sh）
     svc.sh                  # 统一入口：start / stop / restart / status / token（组件 deps|center|web）
     lib.sh                  # 公共函数（svc.sh source 它）
@@ -366,6 +366,11 @@ STACKCHECK_OFFLINE=1 ./scripts/check-stack.sh   # 离线站点：跳过镜像可
 
 发布包里带三平台预编译件（`bin/<triple>/wist-stackcheck`），`scripts/check-stack.sh` 按本机 triple 选；
 开发态没有预编译件时自动回落 `cargo run`；**找不到可执行件直接退出 2**（静默跳过等于检查没做）。
+
+**通用引擎在公共仓 [`wist-stack-tools`](https://github.com/dayu-sec/wist-stack-tools) 的
+`stackcheck-core`**：本仓只保留 `tools/stackcheck/src/profile.rs`（center 的路径/变量/挂载对）
+和 `checks.rs`（center 的 TLS 策略）。依赖按 `tag` 固定；升 core 时改 `Cargo.toml` 的 tag，
+并跑一次 `cargo update -p wist-stackcheck-core --manifest-path tools/stackcheck/Cargo.toml`。
 
 > 升版本（`gx adm v_patch` / `v_feat`）只会改 `version.txt` 与带 marker 的 `Cargo.toml`，**不动 `Cargo.lock`**：
 > 记得补一次 `cargo update -p wist-center-stackcheck --manifest-path tools/stackcheck/Cargo.toml`，

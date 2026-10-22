@@ -17,6 +17,12 @@
 - 判据按 `StackProfile` 参数化（路径/变量/挂载对都在 `tools/stackcheck/src/profile.rs`），
   与 `wist-gateway-stack` 的栈级检查方案同一套输出契约。
 
+### 工程
+
+- **通用引擎抽到公共仓 `wist-stack-tools/stackcheck-core`**（tag 固定）：Flow Result / CLI /
+  渲染/密钥/挂载/端口/镜像/compose/x509 只有一份实现；本仓只保留 center profile、TLS 策略与薄 main。
+  `tools/stackcheck/src/checks.rs` 从 2934 行降到 1311 行。
+
 ### 修复
 
 - `scripts/init-center.sh` 把 `wist-center.value.json` 收紧到 **600**（含 DB 应用账号口令）；

@@ -410,6 +410,14 @@ dependencies = [
 name = "wist-center-stackcheck"
 version = "0.5.0"
 dependencies = [
+ "wist-stackcheck-core",
+]
+
+[[package]]
+name = "wist-stackcheck-core"
+version = "0.1.0"
+source = "git+https://github.com/dayu-sec/wist-stack-tools.git?tag=v0.1.0#9df469dc3e3348af0bab46335367cee8673ab65e"
+dependencies = [
  "serde_json",
  "toml",
  "x509-parser",
