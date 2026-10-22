@@ -3,6 +3,37 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.5.0-alpha] - 2026-10-22
+
+### 组件
+
+- **中心后端 `CENTER_IMAGE_TAG` → `v0.21.0-alpha`**：规则/配置发布纳入统一审批——
+  `publish` 只建 `draft` 发布计划，批准后由中心经 wparse-proxy 入队，并把命令结果回填到计划条目。
+- **中心前端 `CENTER_WEB_IMAGE_TAG` → `v0.12.0-alpha`**：④/⑤ `wparse-rules` / `wparse-infra` 改走计划审批；
+  发布页按「运行时 / 内容与配置」分组；逐台执行反馈拆分「消息 / 日志路径」，详情与日志路径支持点击复制。
+- 两个组件必须**成对升级**：`center-web 0.12` 依赖 `center ≥ 0.21`（旧中心返回 `targets` / `errors`，页面会报契约漂移）。
+
+### 移除
+
+- **取消对 WarpStation 的集成**：删除 `warp-station` / `warp-toolchain` 服务、`station-toolchain` 卷、
+  `STATION_*` / `WARPPARSE_*` / `WEB_WGS_DOMAIN` 变量，以及 `scripts/init-station.sh`、
+  `scripts/provision-station-device.sh`、`sys/configs/station/`、`sys/sandbox/`、`sys/station/default_configs/`。
+- `db-init` 不再创建 `station_app` 角色与 `wp-station` 库；`web` 不再提供 `station.*` 虚拟主机与 basic auth。
+- `sys-prj.yml` 移除 `knowledge/station` 的 ignore/protect/backup 与 `SEC_STATION_*` 注入。
+
+### 保留
+
+- Center 的 `[wparse_release]`（tag 列表）、`wparse-proxy`（`:3101`）、`git-proxy`（`:8443`）保持不变：
+  规则/配置发布通道仍可独立使用，不依赖 WarpStation。
+
+### 升级提示（手动清理，脚本不会自动删数据）
+
+- 目录：`configs/station/`、`identity/station/`；`knowledge/station/`（含两个 Git 工作副本）按需保留或自行备份后删除。
+- 容器/卷：`docker volume rm wp-station-toolchain`（容器由 `up -d --remove-orphans` 清理）。
+- 数据库（如不再需要）：`DROP DATABASE "wp-station"; DROP ROLE station_app;`。
+- `.wist/sec-value.yml` 中的 `station_db_password` / `station_web_password` / `wp_git_push_*` 可删除；
+  `wp_git_pub_*` 仍被 Git Proxy 与 `[wparse_release]` 使用。
+
 ## [0.4.1-alpha] - 2026-10-22
 
 ### 修复
