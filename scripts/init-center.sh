@@ -202,6 +202,8 @@ EOF
 chmod 600 "${tmp_env}"
 if [[ -f "${CENTER_ENV}" ]] && cmp -s "${tmp_env}" "${CENTER_ENV}"; then
   rm -f "${tmp_env}"
+  # 内容没变也要收紧权限：旧版本写的是 644，不修就会让含口令的文件一直 world 可读。
+  chmod 600 "${CENTER_ENV}"
   note "center.env 无变化：${CENTER_ENV}"
 else
   mv -f "${tmp_env}" "${CENTER_ENV}"
@@ -226,10 +228,14 @@ cat >"${tmp}" <<EOF
   "wp_infra_repo": "${WP_INFRA_REPO_URL}"
 }
 EOF
-chmod 644 "${tmp}"
+# value.json 里有 DB 应用账号的口令（database_url），不能对其他用户可读：
+# 它只在 localize 期间被 gx.tpl 读取，收紧到 600 不影响任何容器挂载。
+chmod 600 "${tmp}"
 
 if [[ -f "${VALUE_JSON}" ]] && cmp -s "${tmp}" "${VALUE_JSON}"; then
   rm -f "${tmp}"
+  # 同上：旧版本写的是 644；幂等分支也要把权限修回来。
+  chmod 600 "${VALUE_JSON}"
   note "渲染值与当前一致，跳过：${VALUE_JSON}"
 else
   mv -f "${tmp}" "${VALUE_JSON}"

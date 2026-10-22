@@ -67,6 +67,27 @@ mod operators {
     //    属主一旦是 root，之后的部署账号就写不动了。
     //    幂等：已对齐时不写盘、也不要任何权限；`gops sys perms --check` 可单独做只读自检。
     gx.cmd ( "gops --version | awk '{print $NF}' | awk -F. '($1 < 2 || ($1 == 2 && $2 < 9)) { exit 1 }' || { echo '错误：本栈需要 gops >= 2.9（secrets.mode / perms.services）；先 gops self update --channel alpha'; exit 1; }; gops sys perms --apply" );
+
+    // ⑤ 配置守门（**必须最后**）：刚渲染完的配置立刻自检，**阻断类 FAIL 直接让 localize 失败**。
+    //    为什么在这里：`gops prj upgrade` 的 `regenerate` 阶段调的就是 `gops sys localize` ——
+    //    于是「新模板渲染出来是错的」会在 **pull / up 之前** 暴露，并由 `--on-failure rollback-all`
+    //    回滚，而不是等升级完成、现场跑了两天才发现 public_url 还指着旧域名。
+    //    闸门语义：WARN 与「失败但不阻断」（如 CA-G 缺失）都不拦，只有真会把栈弄坏的才拦。
+    //    首次部署也一样：`docker compose up` 之前就把错误的渲染拦下来。
+    gx.cmd ( "./scripts/check-stack.sh --gate" );
+  }
+
+  // 体检（`gops run diagnose`）：本系统专属的「期望」检查。
+  //
+  // gops 负责通用事实（容器 / 挂载 / 端口 / 日志），这里只补它**不可能知道**的栈内语义：
+  // 渲染产物是否新鲜、compose 挂载与 localize 落点是否同一处、密钥权限、证书 SAN、
+  // 现场态 public_url 是否还跟当前域名一致。
+  //
+  // 契约（galaxy-ops `docs/design/run-diagnose.md` §5/§6）：读 `GOPS_DIAGNOSE_CONTEXT`，
+  // 把 `checks[]` 写到 `GOPS_DIAGNOSE_RESULT`。**只读**：不改盘、不 chmod、不重启。
+  // 注意：GXL 里读 gops 注入的环境变量要用 $(printenv X)（`${X}` 取的是流程变量空间）。
+  flow diagnose {
+    gx.cmd ( "./scripts/check-stack.sh" );
   }
 
 }

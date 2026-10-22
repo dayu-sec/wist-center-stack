@@ -32,6 +32,8 @@ perms:
 ignore:
   - configs
   - artifacts
+  # 栈级检查器的构建产物（本机 cargo target；`.gitignore` 已挡，`--full` 模式的 WalkDir 不读它）。
+  - tools/stackcheck/target
   # 开发态运行物（`dev/svc.sh` 生成：本地 JSON store / pid / 渲染出的配置与 TLS 材料）——
   # 与 `configs` 同一个理由：每部署一份、可重建，不进交付包。
   - dev/configs
@@ -49,6 +51,8 @@ protect:
   - .env
   - configs
   - artifacts
+  # 构建产物：升级/重建同样不该覆盖（与 `ignore` 保持一致）。
+  - tools/stackcheck/target
   # 开发态运行物：升级/重建同样不能覆盖（与 `ignore` 保持一致）。
   - dev/configs
   # 跟 `ignore` 保持一致（不变式 `ignore ⊆ protect`）。

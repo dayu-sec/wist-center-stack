@@ -3,6 +3,30 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [Unreleased]
+
+### 新增
+
+- **栈级配置检查 `wist-stackcheck`**（`tools/stackcheck`，Rust lib + bin）：15 项只读判据，覆盖
+  渲染新鲜度、占位值、两个域名、密钥/私钥权限、站点身份文件、证书 SAN、compose 挂载与 localize
+  落点、现场态 `public_url`、PG 建表脚本、宿主端口、镜像可达。
+  - `scripts/check-stack.sh`：按本机 triple 选预编译件；开发态回落 `cargo run`；找不到就退出 2。
+  - `flow localize` 末尾加 `--gate` 守门（只拦阻断类 FAIL），新增 `flow diagnose` 把 `checks[]`
+    追加到 `GOPS_DIAGNOSE_RESULT`。
+  - 发布包按 triple 追加三份二进制（`bin/<triple>/wist-stackcheck`），仍是单包单地址。
+- 判据按 `StackProfile` 参数化（路径/变量/挂载对都在 `tools/stackcheck/src/profile.rs`），
+  与 `wist-gateway-stack` 的栈级检查方案同一套输出契约。
+
+### 修复
+
+- `scripts/init-center.sh` 把 `wist-center.value.json` 收紧到 **600**（含 DB 应用账号口令）；
+  内容无变化的幂等分支也会修正既有 644 权限。
+- 端口占用检查按 compose 的 `*_BIND_IP` 探测，并正确解析 `docker ps` 的**多行**输出
+  （此前每行第一个映射会被静默漏掉，导致把本栈自己的端口误报成冲突）。
+- 检查器边界收紧：长语法 compose 挂载只在**本条目**内找 `target`（不再把上一个的 target 配给下一个）；
+  端口支持 `[::1]:…` 与行内 `ports: […]`；`.env` 存在但读不了时不再静默回落默认值；
+  只有渲染产物、找不到值文件/模板时报 WARN（不报假绿）。
+
 ## [0.5.0-alpha] - 2026-10-22
 
 ### 组件

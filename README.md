@@ -90,7 +90,9 @@ wist-center-stack/
     ensure-center-server-cert.sh  # 服务器证书（叶）SAN 覆盖对外域名（幂等重签，不动 CA）
     init-center-pub.sh      # 现场态**值**（CENTER_PUBLIC_URL）→ identity/center/.env（按缺补齐）
     init-web-conf.sh        # 前端站点配置的渲染值（幂等；域名取 WEB_WGC_DOMAIN）
+    check-stack.sh          # 栈级配置检查薄壳（选本机 triple 的预编译件；开发态回落 cargo run）
     db-init.sh              # 一次性：创建 center_app 角色与库，收紧 CONNECT
+  tools/stackcheck/          # 栈级检查器（Rust，lib + bin；判据参数化在 StackProfile）
   dev/                      # 开发态：本地二进制 + vite（单一入口 svc.sh）
     svc.sh                  # 统一入口：start / stop / restart / status / token（组件 deps|center|web）
     lib.sh                  # 公共函数（svc.sh source 它）
@@ -127,7 +129,7 @@ wist-center-stack/
 | `gops run stop` | `docker compose stop` |
 | `gops run uninstall` | `docker compose down` |
 | `gops run status` | `docker compose ps` |
-| `gops run diagnose` | `docker compose config` |
+| `gops run diagnose` | `docker compose config` + `flow diagnose`（追加 `checks[]`，含栈级配置 15 项） |
 
 ### 前置：主机要求
 
@@ -159,7 +161,7 @@ gops sys localize
 
 **`localize` 还会跑项目自己的阶段流程**：本栈把它定义在 `sys/workflows/operators.gxl`
 （**本地定义**，不引外部 ops-gxl），由 `_gal/work.gxl` 的 `mod main : operators` 纳入；合并后的值以
-**环境变量**注入该流程（用 `$(printenv XXX)` 读）。流程里做六件**幂等**的事：
+**环境变量**注入该流程（用 `$(printenv XXX)` 读）。流程里做七件**幂等**的事：
 
 1. 确保 `configs/center`、`configs/web`、`configs/git-proxy`、`identity/center`、`artifacts` 存在；
 2. 备料控制中心：CA（信任根 + 服务器证书，落站点身份 `identity/center/`）+ 渲染值
@@ -175,6 +177,9 @@ gops sys localize
 6. **宿主属主/权限对齐**（`gops sys perms --apply`，gops ≥ 2.7；见下「权限与运行身份」；非 Linux 自动跳过）——
    必须在 `docker compose up` **之前**：Docker 会把缺失的挂载源目录自行建成 `root:root`，
    属主一旦是 root，之后的部署账号就写不动了。
+7. **配置守门**（`scripts/check-stack.sh --gate`）：刚渲染完就自检，**阻断类 FAIL 直接让 localize 失败**。
+   `gops prj upgrade` 的 `regenerate` 阶段调用的就是 `gops sys localize`，所以错误的渲染会在
+   `pull` / `up` 之前暴露并触发回滚。判据见下「栈级配置检查」。
 
 `gops sys localize --no-flow` 可跳过该流程；未装 gx 或无该流程时静默跳过（此时权限 `--apply` 也不会执行，
 但 `gops run start` 的 preflight 会拦住未对齐的启动）。
@@ -321,6 +326,50 @@ gops sys perms --apply    # 幂等修复
 | center 拒启 | `failed to load secrets /secrets/sec-value.yml` | 密钥权限/属主不符：应为 `部署账号:999 0640` 且 `secrets.mode: "0640"`；或部署账号不在 gid 999 |
 | center 不提供信任根 | 读 `ca/control-center.pem` / `*.key` 失败 | `identity/center` 未对齐（目录 2750 / 私钥 640） |
 | 制品无法写入 | 上传 / 镜像落盘报错 | `artifacts/` 属主是 root（被 `docker compose up` 先建出来了） |
+
+### 栈级配置检查（`wist-stackcheck`）
+
+栈自己生成的配置互相矛盾时，组件往往不会报错：解析通过、进程起来、只有真用到那一项时才炸。
+所以本栈带一个**只读**检查器（Rust，`tools/stackcheck`），在 localize 末尾与体检时跑：
+
+```bash
+./scripts/check-stack.sh                 # 人读：0 全好 / 1 有 WARN / 2 有 FAIL
+./scripts/check-stack.sh --format json   # Flow Result v1
+./scripts/check-stack.sh --gate          # 闸门：只有阻断类 FAIL 才非零退出（localize 用）
+STACKCHECK_OFFLINE=1 ./scripts/check-stack.sh   # 离线站点：跳过镜像可达
+```
+
+它只查「栈自己生成的东西」；组件键的语义（取值 / 依赖 / 结构体归属）仍由组件自己的严格解析与
+`diagnose` 负责。判据（15 项，全部只读）：
+
+| code | 判什么 | 失败时阻断 |
+|---|---|---|
+| `config.vars` | `.env` / `sys/merged_vars.yml` 能读出变量 | ✓ |
+| `render.freshness.{center,git-proxy,web,center-pub}` | 渲染产物不早于值文件/模板（改了值没重渲） | ✓ |
+| `render.placeholder` | 渲染产物里没有 `example.com` / `warpinsight.example` 等占位值 | ✓ |
+| `domain.configured` | `WEB_WGC_DOMAIN` / `API_WGC_DOMAIN` 不是默认占位值 | ✓ |
+| `secret.file_mode` | `.wist`、`center.env`、含口令的渲染物没有 world 位 | ✓ |
+| `secret.private_key_mode` | `identity/` 下私钥不对其他用户可读 | ✓ |
+| `identity.center_files` | 站点身份（CA / 叶证书 / 私钥 / CA-G）齐全 | 部分（CA-G、CA 私钥不拦升级） |
+| `tls.san_covers_domain` | 叶证书在有效期内，SAN **精确**覆盖两个域名 | ✓ |
+| `layout.mounts` | compose 挂载 ↔ 变量展开 ↔ localize 实际落点三者一致，源存在 | ✓ |
+| `layout.public_url` | 主配置不重复定义 `public_url`；`.env` 的 `CENTER_PUBLIC_URL` 与当前域名/端口一致 | 部分（重复定义拦；`.env` 漂移不拦） |
+| `database.initdb` | `sys/db/initdb/01_schema.sql` 存在且非空 | ✓ |
+| `port.available` | 排除本栈自己的容器后，宿主端口能 bind | ✓ |
+| `image.reachable` | 镜像本地有或远端 manifest 可达 | ✗ |
+
+> **生效值优先**：检查器读栈根 `.env`（`gops sys localize` 产物），只有它不存在时才回落
+> `sys/merged_vars.yml` 并在结果里标明来源 —— 拿默认值去判会把合法的现场覆盖误判成错误。
+>
+> **不阻断 ≠ 不严重**：`image.reachable`、CA-G 缺失等是 FAIL（该修），但当前跑着的栈是好的，
+> 不该因此拦下升级。阻断类只放「会让本次部署直接坏掉」的项。
+
+发布包里带三平台预编译件（`bin/<triple>/wist-stackcheck`），`scripts/check-stack.sh` 按本机 triple 选；
+开发态没有预编译件时自动回落 `cargo run`；**找不到可执行件直接退出 2**（静默跳过等于检查没做）。
+
+> 升版本（`gx adm v_patch` / `v_feat`）只会改 `version.txt` 与带 marker 的 `Cargo.toml`，**不动 `Cargo.lock`**：
+> 记得补一次 `cargo update -p wist-center-stackcheck --manifest-path tools/stackcheck/Cargo.toml`，
+> 连同 `Cargo.lock` 一起提交，否则 CI 的 `--locked` 会失败。
 
 ### 起来之后
 

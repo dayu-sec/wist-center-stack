@@ -8,6 +8,55 @@ permissions:
   contents: read
 
 jobs:
+  # 栈级检查器（`tools/stackcheck`）的单元测试 + 三平台构建。
+  # 二进制**打进同一个部署包**（运行时按 triple 选），所以发布仍是一个平台无关的单包。
+  # 矩阵只覆盖会真实用到的架构；其他架构在运行时由 `scripts/check-stack.sh` 明确报错（不静默跳过）。
+  stackcheck-test:
+    name: Test stackcheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --manifest-path tools/stackcheck/Cargo.toml --locked
+
+  stackcheck-build:
+    name: Build stackcheck (${{ matrix.triple }})
+    needs: [stackcheck-test]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { os: ubuntu-24.04, triple: x86_64-unknown-linux-musl }
+          - { os: ubuntu-24.04, triple: aarch64-unknown-linux-musl }
+          - { os: macos-14,      triple: aarch64-apple-darwin }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cross（linux-musl 交叉编译）
+        if: contains(matrix.triple, 'linux-musl')
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - name: Build
+        env:
+          TRIPLE: ${{ matrix.triple }}
+        run: |
+          set -eu
+          if [ "${TRIPLE#*linux-musl}" != "${TRIPLE}" ]; then
+            cross build --release --locked \
+              --manifest-path tools/stackcheck/Cargo.toml --target "${TRIPLE}"
+          else
+            cargo build --release --locked \
+              --manifest-path tools/stackcheck/Cargo.toml --target "${TRIPLE}"
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: stackcheck-${{ matrix.triple }}
+          path: tools/stackcheck/target/${{ matrix.triple }}/release/wist-stackcheck
+          if-no-files-found: error
+          retention-days: 7
+
   # 打包：整仓内容（除 CI 自身的 .github）打成部署包。
   # 用 git archive 出包，只收 git 跟踪的内容 —— configs/（现场生成，已 ignore）、values/、_gal/.report
   # 等未入 git，天然不入包；sys/configs/*.tpl 与 sys/db/initdb/ 随仓入库，会进包。
@@ -17,9 +66,33 @@ jobs:
   # 的变更一起提交，否则包里带的是旧值。
   package:
     name: Package deployment bundle
+    needs: [stackcheck-build]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+
+      # 预编译件按 triple 放进 bin/，再由下面的 `tar -rf` 追加进**同一个**包。
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: stackcheck-*
+          path: staging
+
+      - name: Stage stackcheck binaries
+        run: |
+          set -eu
+          rm -rf stage
+          for dir in staging/stackcheck-*; do
+            [ -d "${dir}" ] || continue
+            triple="${dir#staging/stackcheck-}"
+            mkdir -p "stage/bin/${triple}"
+            cp "${dir}/wist-stackcheck" "stage/bin/${triple}/wist-stackcheck"
+            chmod 755 "stage/bin/${triple}/wist-stackcheck"
+          done
+          # 包内必须真的有三个平台：少一个就会让那部分现场无法体检。
+          [ -d stage/bin ] || { echo "::error::没有 stage/bin（stackcheck 构建产物缺失）"; exit 1; }
+          count=$(ls -1 stage/bin | wc -l | tr -d ' ')
+          [ "${count}" -ge 3 ] || { echo "::error::stackcheck 只构建出 ${count} 个平台"; exit 1; }
+          find stage -type f -exec ls -lh {} \;
 
       - name: Build tarball
         run: |
@@ -31,9 +104,14 @@ jobs:
           git archive \
             --format=tar \
             HEAD -- . ':(exclude).github' > "${bundle}.tar"
+          # 预编译件不在 git 里（`git archive` 只收跟踪内容），在**未压缩**的 tar 上追加。
+          # 这样制品仍是「一个平台无关的单包、同一个下载地址」，升级协议一行不用改。
+          tar -rf "${bundle}.tar" -C stage bin
           gzip -9 "${bundle}.tar"
           echo "包内关键文件："
           tar -tzf "${bundle}.tar.gz" | grep -E "sys/.*vars\.yml|sys/sys_model\.yml|sys/docker-compose\.yml"
+          echo "包内检查器："
+          tar -tzf "${bundle}.tar.gz" | grep -E '^bin/.*/wist-stackcheck$'
           ls -lh "${bundle}.tar.gz"
 
       - uses: actions/upload-artifact@v7

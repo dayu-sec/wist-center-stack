@@ -1,0 +1,24 @@
+[package]
+name = "wist-center-stackcheck"
+version = "0.5.0" #@gxl:set(version)
+edition = "2024"
+license = "Apache-2.0"
+description = "Stack-level config checks for wist-center-stack: layout/mount consistency, render freshness, placeholders, secret perms, TLS SAN, public_url."
+publish = false
+
+[[bin]]
+name = "wist-stackcheck"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+toml = "0.8"
+# 证书 SAN / 有效期解析：只读 PEM，不验签（验签是 openssl / 客户端的事）。
+x509-parser = "0.16"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -41,6 +41,10 @@ wist-center-backup-*.tar.gz
 # —— 与发布态同性质，绝不入库（上面的 `/configs/` 是根路径锚定写法，盖不到 `dev/configs/`）。
 /dev/configs/
 
+# 栈级检查器（tools/stackcheck）的构建产物 / 发布包里的预编译件
+/tools/stackcheck/target/
+/bin/*/wist-stackcheck
+
 # macOS
 .DS_Store
 .report
