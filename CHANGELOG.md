@@ -3,6 +3,13 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.4.1-alpha] - 2026-10-22
+
+### 修复
+
+- **中心后端 `CENTER_IMAGE_TAG` → `v0.20.1-alpha`**：修复规则 / 配置发布时 tag 带 `v` 前缀导致的 500
+  （wparse 的 `version` 字段期望版本号，Center 现在统一去掉前导 `v`）。
+
 ## [0.4.0-alpha] - 2026-10-22
 
 ### 变更

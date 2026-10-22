@@ -19,8 +19,6 @@ system:
   #   CENTER_REGISTRY      中心后端 + 前端（wist-center / wist-center-web）
   #   VM_REGISTRY          VictoriaMetrics（观测）
   #   PG_REGISTRY          PostgreSQL（中心存储）
-  #   STATION_REGISTRY     WarpStation（规则管理 / 发布控制台）
-  #   WARPPARSE_REGISTRY   WarpParse 工具链基镜像（wparse / wpgen / wproj）
   #   GIT_PROXY_REGISTRY   Center Git Proxy（nginx）
   - name: CENTER_REGISTRY
     value: ghcr.io/dayu-sec
@@ -31,12 +29,6 @@ system:
   - name: PG_REGISTRY
     value: docker.io/library
 
-  - name: STATION_REGISTRY
-    value: ghcr.io/wp-labs
-
-  - name: WARPPARSE_REGISTRY
-    value: ghcr.io/wp-labs
-
   - name: GIT_PROXY_REGISTRY
     value: docker.io/library
 
@@ -44,21 +36,13 @@ system:
   #   CENTER_IMAGE_TAG       wist-center 的 release tag
   #   CENTER_WEB_IMAGE_TAG   wist-center-web 的 release tag
   - name: CENTER_IMAGE_TAG
-    value: v0.20.0-alpha
+    value: v0.20.1-alpha
   - name: CENTER_WEB_IMAGE_TAG
     value: v0.11.0-alpha
   # 观测镜像 tag（源前缀见 VM_REGISTRY）
   - name: VM_IMAGE_TAG
     value: v1.154.0
 
-  # 规则管理 / 发布控制台。
-  #   STATION_IMAGE_TAG：WarpStation 的 release tag（上游 v0.2.14-alpha 起支持 models/infra 双仓库）。
-  #   WARPPARSE_IMAGE_TAG：工具链基镜像版本，**必须与 Gateway 的 WPARSE_TAG 对齐**；
-  #                 它只用于 WarpStation 的 wparse/wpgen/wproj，不参与线上数据面运行。
-  - name: STATION_IMAGE_TAG
-    value: v0.2.14-alpha
-  - name: WARPPARSE_IMAGE_TAG
-    value: 0.31.1-alpha
   # Git Proxy 镜像（官方 nginx；固定小版本，定期跟随安全更新）。
   - name: GIT_PROXY_IMAGE_TAG
     value: 1.27-alpine
@@ -88,7 +72,7 @@ system:
     value: 127.0.0.1
   - name: CENTER_ADMIN_HOST_PORT
     value: 3102
-  # 中心前端 + WarpStation 统一入口：同一个 nginx、同一个端口，按 server_name 分流。
+  # 中心前端入口（nginx 终止 TLS + 静态 + /api 反代到中心）。
   # 本机默认 2443；8443 留给 wist-gateway-stack 的 web，避免两栈同机冲突。
   - name: WEB_BIND_IP
     value: 127.0.0.1
@@ -102,25 +86,14 @@ system:
     value: 127.0.0.1
   - name: VM_HOST_PORT
     value: 28429
-  # WarpStation 控制台（自带前端 + API）。仍只绑 127.0.0.1，供本机调试；
-  # 对外统一走 web 的 2443 + station 虚拟主机。
-  - name: STATION_HOST_PORT
-    value: 18081
-  # WarpStation 的对外主机名（与 WEB_WGC_DOMAIN 同级；证书 SAN 会包含它）。
-  # 留空 = init-web-conf.sh 派生 `station.<WEB_WGC_DOMAIN>`；现场可在 ops-prj 的 values/<系统名>/sys_value.yml 覆盖。
-  - name: WEB_WGS_DOMAIN
-    value: ''
-  # WarpStation 虚拟主机的 basic auth 用户名（密码在 .wist/sec-value.yml 的 station_web_password）。
-  - name: STATION_WEB_USER
-    value: admin
   # Center Git Proxy：Gateway 的 wparse 从这里拉取 CNB 仓库。
   # **必须对 Gateway 主机可达** → 属于公网面（与 CENTER_HOST_PORT 同级）。
   - name: GIT_PROXY_BIND_IP
     value: 0.0.0.0
   - name: GIT_PROXY_HOST_PORT
     value: 18082
-  # Center wparse-proxy：WarpStation 调 wparse 管理面的兼容入口（**管理面，内网**）。
-  # 同栈的 WarpStation 走 docker 网络，不需要宿主端口；远程 WarpStation 请绑内网 NIC。
+  # Center wparse-proxy：wparse 管理面的兼容入口（**管理面，内网**）。
+  # 同栈调用方走 docker 网络，不需要宿主端口；远程调用方请绑内网 NIC。
   - name: WPARSE_PROXY_BIND_IP
     value: 127.0.0.1
   - name: WPARSE_PROXY_HOST_PORT
@@ -144,7 +117,7 @@ system:
 
   # 中心存储 PostgreSQL（容器网络内服务名 postgres）。
   # PG_SUPERUSER / PG_SUPERUSER_PASSWORD 是 **bootstrap superuser**，只用于建库/迁移/备份，不用于应用。
-  # app 账号在 scripts/init-*.sh 里生成：center_app / station_app。
+  # app 账号在 scripts/init-*.sh 里生成：center_app。
   - name: PG_SUPERUSER
     value: demo
   - name: PG_SUPERUSER_PASSWORD
@@ -152,13 +125,9 @@ system:
   - name: PG_DB
     value: insight_demo
 
-  # WarpStation 独立库。账号 station_app 由 db-init 创建，密码在 .wist。
-  - name: STATION_DB_NAME
-    value: wp-station
-
-  # 外部 Git 仓库（私有，已存在）。WarpStation 用 git 命令读写，不依赖任何 Git 服务的 API。
+  # 外部 Git 仓库（私有，已存在）。Center 的规则发布入口与 Git Proxy 共用。
   #   WP_RULES_REPO_URL / WP_INFRA_REPO_URL：预克隆与 push 的远端（必须同主机）；
-  #   WP_GIT_BASE_URL：WarpStation [gitea].base_url 占位；留空 = 从两个 repo URL 推导；
+  #   WP_GIT_BASE_URL：[gitea] base_url 占位；留空 = 从两个 repo URL 推导；
   #   WP_GIT_PUSH_USER / WP_GIT_PUB_USER：写/读账号（可被 .wist 的 wp_git_*_user 覆盖）；
   #   token 不放这里：.wist/sec-value.yml 的 wp_git_push_token / wp_git_pub_token。
   - name: WP_RULES_REPO_URL
@@ -171,8 +140,6 @@ system:
     value: ''
   - name: WP_GIT_PUB_USER
     value: ''
-  - name: STATION_LOG_LEVEL
-    value: info
 
   # 外部 Git 上游的鉴权 header（默认 Basic Authorization；Bearer/自定义时改名字）。
   - name: WP_GIT_AUTH_HEADER
@@ -182,7 +149,7 @@ system:
   - name: GIT_PROXY_ALLOW_CIDR
     value: ''
 
-  # Gateway 侧 wparse 的 Git 拉取基址（写进 init-station.sh 生成的对接片段）。
+  # Gateway 侧 wparse 的 Git 拉取基址（写进网关对接片段）。
   # **Gateway 主机视角**：留空 = 自动取 `https://${API_WGC_DOMAIN}:${GIT_PROXY_HOST_PORT}`；
   # 如果 Gateway 走另一条网络/域名访问 Center，再在 values/ 里显式覆盖。
   - name: GIT_PROXY_PUBLIC_BASE
@@ -197,28 +164,12 @@ system:
     value: ./configs/center
   - name: CENTER_ARTIFACT_DIR
     value: ./artifacts
-  # WarpStation 运行期目录（**落在 configs/ 下**：不入库 / 不进包 / 纳入 gops prj backup）。
-  - name: STATION_CONFIG_DIR
-    value: ./configs/station
-  # WarpStation 工作区根（**版本化知识库**：wp-rules / wp-infra 的 git 工作副本）。
-  # 独立挂载到容器 `/app/gitea`；上游 v0.2.14 固定布局 `<root>/{wparse,wfusion}__{models,infra}`，
-  # CNB 的两个仓库分别落到 wparse__models / wparse__infra。
-  # 与 `configs/` 分开：这里是现场数据 + git 历史，生命周期与备份策略都不同。
-  - name: STATION_KNOWLEDGE_DIR
-    value: ./knowledge/station
-  - name: STATION_MODELS_DIR
-    value: ./knowledge/station/wparse__models
-  - name: STATION_INFRA_DIR
-    value: ./knowledge/station/wparse__infra
   # Git Proxy 配置目录（nginx.conf 渲染物）。
   - name: GIT_PROXY_CONFIG_DIR
     value: ./configs/git-proxy
   # 前端站点配置：由 sys/configs/web/nginx.conf.tpl 在 localize 时渲染到此（运行物，不入库）
   - name: WEB_NGINX_CONF
     value: ./configs/web/nginx.conf
-  # WarpStation 虚拟主机的 basic auth 密码文件（由 init-web-conf.sh 生成，运行物）
-  - name: STATION_WEB_HTPASSWD
-    value: ./configs/web/htpasswd
   # PostgreSQL 建表脚本目录（随库入库；首次初始化数据卷时执行）
   - name: PG_INITDB_DIR
     value: ./sys/db/initdb
