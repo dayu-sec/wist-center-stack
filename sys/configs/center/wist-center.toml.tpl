@@ -142,7 +142,7 @@ tags_limit = 100
 # 启动时写入 store（仅缺失时写入）的网关种子凭据，每项 `gateway_id:token`。
 gateway_credentials = []
 
-# 规则发布兼容入口（WarpStation **设备面**）：独立 HTTPS listener + 命令队列。
+# 规则发布兼容入口（设备面）：独立 HTTPS listener + 命令队列。
 # TLS 复用上面的 server cert/key（WARP_INSIGHT_CENTER_SERVER_{CERT,KEY}_PATH）；
 # 设备 Token 是 Center 签发的 proxy token（管理面
 # `POST /api/v1/admin/gateways/{gateway_id}/wparse-proxy-token`），不是网关 mTLS 证书。

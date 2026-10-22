@@ -2,7 +2,7 @@
 #
 # src: sys/configs/git-proxy/nginx.conf.tpl
 # dst: configs/git-proxy/nginx.conf（compose 挂到 /etc/nginx/nginx.conf:ro；600，含 CNB 读凭据）
-# 渲染值: configs/git-proxy/git-proxy.value.json（scripts/init-station.sh 生成，600）
+# 渲染值: configs/git-proxy/git-proxy.value.json（本栈 localize 流程生成，600）
 #
 # 安全边界（设计文档 §5.2.1）：
 #   · **只允许**两个仓库的 smart HTTP 读端点（info/refs、git-upload-pack、HEAD）；
