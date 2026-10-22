@@ -17,7 +17,7 @@
 #
 # 环境（gops 把合并后的系统变量以**环境变量**注入 localize 流程）：
 #   WEB_WGC_DOMAIN          对外域名（第 2 参数缺省时用它）；也决定 public_url 与证书 SAN
-#   API_WGC_DOMAIN / WEB_WGS_DOMAIN   覆盖派生的 `api.<域名>` / `station.<域名>`（也进证书 SAN）
+#   API_WGC_DOMAIN   覆盖派生的 `api.<域名>`（也进证书 SAN）
 #   PG_SUPERUSER / PG_SUPERUSER_PASSWORD / PG_DB   中心存储 DSN 的组成（容器网络内服务名 postgres）
 #   VICTORIA_METRICS_URL   时序库地址（容器网络内服务名 victoria-metrics）
 #   GATEWAY_IMAGE          生成网关安装命令用的镜像（写进 [artifacts] gateway_image）
@@ -94,12 +94,10 @@ esac
 
 mkdir -p "${IDENTITY_DIR}" "${CONFIG_DIR}/state" "${CONFIG_DIR}/logs" "${STACK_ROOT}/artifacts"
 
-# 服务器证书 SAN 要同时覆盖：管理面/UI 域名、**公网网关面域名**、WarpStation 域名。
-# 后两者留空 = 派生 `api.<WEB_WGC_DOMAIN>` / `station.<WEB_WGC_DOMAIN>`，可用
-# API_WGC_DOMAIN / WEB_WGS_DOMAIN 覆盖。
+# 服务器证书 SAN 要同时覆盖：管理面/UI 域名与**公网网关面域名**。
+# 后者留空 = 派生 `api.<WEB_WGC_DOMAIN>`，可用 API_WGC_DOMAIN 覆盖。
 API_WGC_DOMAIN="${API_WGC_DOMAIN:-api.${DOMAIN}}"
-WEB_WGS_DOMAIN="${WEB_WGS_DOMAIN:-station.${DOMAIN}}"
-EXTRA_SANS="${API_WGC_DOMAIN},${WEB_WGS_DOMAIN}"
+EXTRA_SANS="${API_WGC_DOMAIN}"
 
 # ── 1) 控制中心 CA（信任根 + 服务器证书）：缺失才生成，落站点身份目录 ──
 # control-center.pem 是分发给所有网关的信任根（control_center.trust_bundle）；
@@ -184,8 +182,7 @@ if [[ ${#missing_secrets[@]} -gt 0 ]]; then
   exit 1
 fi
 
-# 纯数字密码会被 WarpStation 的 config crate（try_parsing）当成整数；中心侧虽不走 config crate，
-# 但统一约束，避免运维把同一类密码复制到 station。
+# 纯数字密码容易被配置加载层（try_parsing）误判类型；统一要求含字母。
 case "${CENTER_DB_PASSWORD}" in
   *[!0-9]*) ;;
   *)

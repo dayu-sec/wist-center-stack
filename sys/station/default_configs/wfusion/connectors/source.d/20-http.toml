@@ -1,9 +1,0 @@
-[[connectors]]
-id = "http_src"
-type = "http"
-# 允许覆写的键，兼容 syslog 的常见命名
-allow_override = ["port","path"]
-
-[connectors.params]
-port = 8000
-path = "/"          # auto|line|len

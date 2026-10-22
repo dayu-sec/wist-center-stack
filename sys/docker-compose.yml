@@ -6,19 +6,17 @@
 #   git-proxy        ${GIT_PROXY_HOST_PORT}:8443     Gateway 拉 CNB 仓库（只读 smart HTTP）
 #   **内网面（默认只绑 127.0.0.1）**
 #   center           ${CENTER_ADMIN_HOST_PORT}:3102 管理面（/api/v1/admin/**；浏览器经 web 反代）
-#   center           ${WPARSE_PROXY_HOST_PORT}:3101 规则发布兼容入口（WarpStation 设备面）
+#   center           ${WPARSE_PROXY_HOST_PORT}:3101 规则发布兼容入口（设备面 wparse-proxy）
 #   web              ${WEB_HOST_PORT}:443           前端入口（nginx 终止 TLS + 静态 + /api 反代到 3102）
 #   postgres         ${PG_HOST_PORT}:5432           中心存储
 #   victoria-metrics ${VM_HOST_PORT}:8428           指标/历史时序
-#   warp-station     ${STATION_HOST_PORT}:8081      规则管理 / 发布控制台（自带前端 + API；**仅绑回环**，见下）
 #   git-proxy        ${GIT_PROXY_HOST_PORT}:8443    Gateway 只读拉取 CNB 的 Git 反代
 #
 # 一次性任务（无端口）：
-#   db-init                以 db_admin 幂等创建 center_app / station_app 角色与库，收紧 CONNECT
+#   db-init                以 db_admin 幂等创建 center_app 角色与库，收紧 CONNECT
 #   db-schema              以 center_app 幂等套一遍 sys/db/initdb/01_schema.sql
-#   warp-toolchain         把 wparse/wpgen/wproj/wpadm 复制进命名卷（WarpStation 直接执行；v1 单容器）
 #
-# 容器内端口是**应用契约**，写死（3100/3101/443/5432/8428/8081/8443）；宿主端口才是变量。
+# 容器内端口是**应用契约**，写死（3100/3101/443/5432/8428/8443）；宿主端口才是变量。
 #
 # 值来源（gops 系统约定）：
 #   - 随环境/客户变化的量（镜像源与 tag、宿主端口、域名、挂载路径）统一用 Compose 原生 `${VAR}`
@@ -26,7 +24,7 @@
 #     `gops sys localize` → 栈根 .env。现场覆盖写 ops-prj 的 `values/<系统名>/sys_value.yml`（本仓不跟踪 `values/`）。
 #   - 密钥走栈根 `.wist/sec-value.yml`（只读挂进需要它的容器 / 由 localize 渲染进配置）：
 #     center_admin_token / center_hmac_secret / center_db_password /
-#     station_db_password / wp_git_push_token / wp_git_pub_token。
+#     wp_git_push_token / wp_git_pub_token。
 #
 # 单实例保障：所有服务都钉**固定 `container_name`**（不是 compose 默认的 `<项目>-<服务>-1`）。
 # 为什么必须钉：默认名里带项目名，而项目名默认取目录名 —— 两份同名目录的栈会共用同一批容器名，
@@ -59,7 +57,7 @@ services:
 
   # ── PG 角色/库隔离（一次性，v1 必做：设计文档 §9.7 / R3）──
   #
-  # center_app 只连 insight_demo；station_app 只连 wp-station；两者都不是 superuser。
+  # center_app 只连 insight_demo，且不是 superuser。
   # db_admin（PG_SUPERUSER）只用于 bootstrap / 本服务 / 备份。
   # 既有现场：把 db_admin 名下对象 REASSIGN 给 app 账号，再收紧 CONNECT/TEMPORARY。
   db-init:
@@ -75,7 +73,6 @@ services:
       PGPASSWORD: ${PG_SUPERUSER_PASSWORD}
       PGDATABASE: postgres
       CENTER_DB_NAME: ${PG_DB}
-      STATION_DB_NAME: ${STATION_DB_NAME}
       SEC_FILE: /secrets/sec-value.yml
     volumes:
       - ./scripts/db-init.sh:/db-init.sh:ro
@@ -165,7 +162,7 @@ services:
       # 面分离：
       #   3100 = 网关面（**公网**，`/api/v1/gateway/**` + `/api/v1/version`，mTLS）
       #   3102 = 管理面（**内网**，`/api/v1/admin/**` + `/api/v1/version`；浏览器经 web 反代）
-      #   3101 = WarpStation 设备面（内网；同栈走 docker 网络，宿主端口仅供排障）
+      #   3101 = 设备面 wparse-proxy（内网；同栈走 docker 网络，宿主端口仅供排障）
       - "${CENTER_BIND_IP}:${CENTER_HOST_PORT}:3100"
       - "${CENTER_ADMIN_BIND_IP}:${CENTER_ADMIN_HOST_PORT}:3102"
       - "${WPARSE_PROXY_BIND_IP}:${WPARSE_PROXY_HOST_PORT}:3101"
@@ -180,50 +177,13 @@ services:
         condition: service_healthy
     networks:
       default:
-        # 同栈的 WarpStation 直接走容器网络访问 Center，不再经宿主端口/host-gateway：
+        # 同栈调用方直接走容器网络访问 Center，不再经宿主端口/host-gateway：
         #   设备地址 = ${API_WGC_DOMAIN}，端口 = 3101（wparse-proxy 容器内监听）。
         # 这样网络重建后不依赖 0.250.250.254 这类宿主网关别名。
         aliases:
           - ${API_WGC_DOMAIN}
 
-  # ── 规则管理：WarpStation + 工具链 + Git Proxy ──
-  #
-  # v1 先按**单容器**跑通：WarpStation 直接执行真实 wparse/wpgen/wproj。
-  # 沙盒拆容器（无网络/无密钥 worker）作为后续安全加固项，**v1 不启用**；
-  # 对应源码保留在 `sys/sandbox/`，但本编排不引用。
-  #
-  # 这一组服务与中心后端**解耦**：中心挂了不影响规则维护，反之亦然。
-  #   · 规则/配置主数据源是 **gitea/wparse__models 与 gitea/wparse__infra** 两个工作区
-  #     （落在 configs/station 下，随 configs/ 一起备份）；版本化走外部 CNB 私有仓库（git-only）。
-  #   · WarpStation 发布时调 **Center wparse-proxy**；Center → gwlinkd → 本机 wparse admin API。
-  #   · Gateway 的 wparse 通过 git-proxy 拉取 CNB；CNB 凭据只在 Center。
-
-  # 一次性：把 WarpParse 工具链复制进共享命名卷，供 WarpStation 直接执行。
-  # 版本变量 WARPPARSE_IMAGE_TAG **必须与 Gateway 的 WPARSE_TAG 对齐**。
-  # 命名卷默认 root:root；复制服务用 root 写入，WarpStation 以 999 只读挂载。
-  warp-toolchain:
-    container_name: wist-center-stack-warp-toolchain
-    image: ${WARPPARSE_REGISTRY}/warp-parse:${WARPPARSE_IMAGE_TAG}
-    restart: "no"
-    user: "0:0"
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        set -e
-        mkdir -p /toolchain
-        # 上游 v0.2.14 的沙盒预检查会跑 `wpadm --version` / `wpadm check`（wparse）
-        # 与 `wfadm --version` / `wfadm check`（wfusion）；镜像里 `wproj` 是 `wpadm` 的软链，
-        # 只拷 3 个老名字会让「命令检查」直接失败。按镜像实际内容全拷，缺的就跳过。
-        for bin in wparse wpgen wproj wpadm wfadm wprescue; do
-          if [ -x "/usr/local/bin/$$bin" ]; then
-            cp -f "/usr/local/bin/$$bin" "/toolchain/$$bin"
-            chmod 0755 "/toolchain/$$bin"
-          fi
-        done
-        echo "warp toolchain ready: /toolchain"
-        ls -la /toolchain
-    volumes:
-      - station-toolchain:/toolchain
+  # ── Git Proxy（Gateway 只读拉取 CNB）──
 
   # CNB 只读 Git 反代（nginx）。
   # 路径白名单只在 nginx.conf.tpl 里维护；nginx.conf 由 localize 渲染（600，含 CNB 读凭据）。
@@ -252,76 +212,6 @@ services:
       retries: 5
       start_period: 5s
 
-  # 规则管理 / 发布控制台。
-  # 运行身份固定 999:999（与 center / wparse 一致），宿主 bind 挂载权限由 `gops sys perms` 对齐。
-  # v1：主容器直接持有 CNB 写 token / DB 凭据，也直接执行真实工具链（单容器）。
-  # config.toml 只读挂载（DB 密码在渲染时写入）；CNB token 走 station.env（env_file）。
-  warp-station:
-    container_name: wist-center-stack-warp-station
-    image: ${STATION_REGISTRY}/wp-station:${STATION_IMAGE_TAG}
-    user: "999:999"
-    restart: unless-stopped
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
-      warp-toolchain:
-        condition: service_completed_successfully
-    env_file:
-      - ${STATION_CONFIG_DIR}/station.env
-    environment:
-      # 运行期覆盖：值来源仍是 config.toml，这里只钉容器内地址/路径。
-      # HOME 必须是容器内可写目录：/app 是 root:root 755，镜像里的 999 写不了；
-      # 下面的 `git config --global` 要落 $HOME/.gitconfig。
-      HOME: /tmp
-      WP_STATION__DATABASE__HOST: postgres
-      WP_STATION__DATABASE__PORT: "5432"
-      WP_STATION__DATABASE__NAME: ${STATION_DB_NAME}
-      WP_STATION__DATABASE__USERNAME: station_app
-      WP_STATION__ASSIST__BASE_URL: ""
-      WP_STATION__FEATURES__DATA_COLLECT_URL: ""
-      WP_STATION__WARPARSE__CA_FILE: /app/tls/CA.crt
-      # ⚠ 无效变量：上游 v0.2.14/v0.2.15 只在 tests/common 里读 WARP_STATION_SKIP_SANDBOX，
-      # 运行时代码没有实现“跳过沙盒”，留着不会生效（沙盒阶段照样跑）。保守起见不再声明。
-    volumes:
-      - ${STATION_CONFIG_DIR}/config.toml:/app/config/config.toml:ro
-      # 沙盒默认配置（编译进二进制的同一份，按上游 tag 解包到 sys/station/default_configs）：
-      # 沙盒准备阶段会用它整目录替换 topology/sinks（避免连真实下游），`runtime` 也由它补。
-      # 缺失时上游报“沙盒覆盖 wparse sinks 失败: 未找到 default_configs 目录”。
-      - ./sys/station/default_configs:/app/default_configs:ro
-      # v0.2.14 固定布局：/app/gitea/{wparse,wfusion}__{models,infra}
-      # 宿主机工作区根：STATION_KNOWLEDGE_DIR（默认 ./knowledge/station）。
-      # CNB 工作副本在 wparse__models / wparse__infra；wfusion__* 由 WarpStation 自动补齐。
-      - ${STATION_KNOWLEDGE_DIR}:/app/gitea
-      # 真实工具链（wparse/wpgen/wproj）：由 warp-toolchain 一次性复制进命名卷。
-      - station-toolchain:/app/toolchain:ro
-      # WarpStation 调 Center wparse-proxy 时预加载的信任根（默认 = 中心 CA）。
-      - ./identity/station/warparse-ca.pem:/app/tls/CA.crt:ro
-    ports:
-      # **必须绑回环**：wp-station 的 API 没有鉴权中间件（登录只发 token，后端不校验），
-      # 暴露到非回环等于把规则库/发布/沙盒无认证地交给任意可达者。
-      # 远程访问走 SSH 隧道，或后续在 Center web 前加认证反代（TODO）。
-      - "127.0.0.1:${STATION_HOST_PORT}:8081"
-    ulimits:
-      nproc: 4096
-    tmpfs:
-      # WarpStation 的规则校验 / 发布校验 / 沙盒会在 `<cwd>/tmp` 下建工作目录；
-      # `/app` 是 root:root 755，运行用户 999 建不了 → `Permission denied (os error 13)`。
-      # 用 tmpfs（1777）提供可写临时根；重启即清，不污染镜像层。
-      - /app/tmp:rw,nosuid,size=256m,mode=1777
-    # v1 与上游 wp-station 保持一致：沙盒任务会起 wparse 子进程。
-    # TODO(security): 后续安全分析时评估能否去掉；不要把它当成长期方案。
-    security_opt:
-      - seccomp=unconfined
-    command:
-      - /bin/sh
-      - -c
-      - |
-        git config --global user.name "WarpStation"
-        git config --global user.email "station@warpparse.local"
-        # bind 挂载的属主是部署账号（组 999），git 会报 dubious ownership；容器内放开即可。
-        git config --global --add safe.directory '*'
-        exec /app/wp-station
-
   # ── 前端（nginx：**终止 TLS** + 静态托管 + /api 反代到 center）──
   #
   # 镜像内**不含**站点配置：由 sys/configs/web/nginx.conf.tpl 渲染出 configs/web/nginx.conf 后
@@ -333,7 +223,6 @@ services:
     restart: unless-stopped
     volumes:
       - ${WEB_NGINX_CONF}:/etc/nginx/conf.d/default.conf:ro
-      - ${STATION_WEB_HTPASSWD}:/certs/htpasswd:ro
       - ./identity/center/control-center-server.crt:/certs/server.crt:ro
       - ./identity/center/control-center-server.key:/certs/server.key:ro
     ports:
@@ -341,15 +230,9 @@ services:
       - "${WEB_BIND_IP}:${WEB_HOST_PORT}:443"
     depends_on:
       - center
-      - warp-station
 
 volumes:
   postgres16-data:
     driver: local
   metrics_data:
-    driver: local
-  # WarpParse 工具链（wparse/wpgen/wproj）；一次性服务写入，WarpStation 只读挂载。
-  # 显式固定全局卷名：不随目录/项目名变化（与固定 container_name 同一理由）。
-  station-toolchain:
-    name: wp-station-toolchain
     driver: local

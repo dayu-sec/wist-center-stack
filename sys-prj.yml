@@ -31,9 +31,6 @@ perms:
 # 拆开就不自足（丢私钥 = 签不出新叶 / 客户端证书 = 换锚），所以**整目录进 contract**。
 ignore:
   - configs
-  # WarpStation 知识库工作区（wp-rules / wp-infra 的 git clone）：现场数据、不进交付包。
-  # 与 configs 分开：它是版本化数据，生命周期和备份策略不同。
-  - knowledge/station
   - artifacts
   # 开发态运行物（`dev/svc.sh` 生成：本地 JSON store / pid / 渲染出的配置与 TLS 材料）——
   # 与 `configs` 同一个理由：每部署一份、可重建，不进交付包。
@@ -51,8 +48,6 @@ ignore:
 protect:
   - .env
   - configs
-  # WarpStation 知识库工作区：升级/重建时不能覆盖。
-  - knowledge/station
   - artifacts
   # 开发态运行物：升级/重建同样不能覆盖（与 `ignore` 保持一致）。
   - dev/configs
@@ -68,9 +63,6 @@ protect:
 #   control-center-server.crt    # 中心 TLS 服务器证书（由 CA 签；给前面的反代用，中心容器自身不做 TLS）
 #   control-center-server.key    # 中心服务器私钥
 #   control-center.srl           # CA 序列号（宿主 openssl 续签要写）
-#
-# `identity/station/` 里（WarpStation 对接 Center wparse-proxy 用）：
-#   warparse-ca.pem              # WarpStation 预加载的信任根（默认 = 中心 CA 的副本）
 #
 # **为什么含私钥**：身份是「证书 + 私钥」一对，只留公开半不自足 —— 丢了 CA 私钥就签不出新的
 # 服务器 / 客户端证书（= 换锚、所有网关重发信任根），契约等于冻结 / 作废。故整目录进 contract，
@@ -90,7 +82,7 @@ contract:
 
 # 备份选取（**扁平列表**：只表达“丢了什么代价”，**不触发任何删除**）。
 # 列进来的都是站点**不可再生 / 需原样回放**的材料：`configs/`（渲染出的 `wist-center.toml`、
-# JSON store、logs、`configs/station/` 的 CNB 工作副本与 token、`configs/git-proxy/`）
+# JSON store、logs、`configs/git-proxy/`）
 # 与密钥文件 `.wist/sec-value.yml`（admin token / hmac secret / app DB 密码 / CNB token）。注意：`wist-center.toml` 里只有 `${SEC_CENTER_*}` **占位**
 # （真值不落盘），所以归档**必须**带上 `.wist`，否则还原后重新生成会换掉 token / hmac
 # （已注册网关的派生凭据全失效）。
@@ -107,8 +99,6 @@ contract:
 #   （诊断当声明错误报出）。
 backup:
   - configs
-  # WarpStation 知识库工作区（含 .git）：未推送的提交只能靠这份备份；已推送的以 CNB 为准。
-  - knowledge/station
   - .wist
 
 # 密钥文件：`gops run` / `gops sec` 运行时从这里加载 `SEC_*` 环境变量（值不落配置、不进包）。
@@ -132,4 +122,3 @@ secrets:
     run: all
     localize:
       - SEC_CENTER_*
-      - SEC_STATION_*

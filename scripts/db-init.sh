@@ -3,13 +3,12 @@
 #
 # 职责（设计文档 §9.7）：
 #   · center_app  ：只连 insight_demo（owner）
-#   · station_app ：只连 wp-station（owner）
-#   · 两个角色都**不是** superuser；db_admin（PG_SUPERUSER）只用于 bootstrap / 备份
+#   · 角色**不是** superuser；db_admin（PG_SUPERUSER）只用于 bootstrap / 备份
 #   · 既有现场把 db_admin 名下的对象改归属，并收紧 CONNECT/TEMPORARY
 #
 # 输入：
 #   PGHOST / PGUSER / PGPASSWORD / PGDATABASE（db_admin 连接）
-#   CENTER_DB_NAME（= PG_DB）、STATION_DB_NAME
+#   CENTER_DB_NAME（= PG_DB）
 #   SEC_FILE（默认 /secrets/sec-value.yml，只读挂载）
 #
 # 幂等：角色/库存在即跳过；密码每次都对齐到密钥文件；ALTER OWNER / REVOKE 可重复执行。
@@ -17,7 +16,6 @@ set -euo pipefail
 
 SEC_FILE="${SEC_FILE:-/secrets/sec-value.yml}"
 CENTER_DB_NAME="${CENTER_DB_NAME:?CENTER_DB_NAME required}"
-STATION_DB_NAME="${STATION_DB_NAME:?STATION_DB_NAME required}"
 ADMIN_ROLE="${PGUSER:?PGUSER required}"
 
 get_secret() {
@@ -37,54 +35,29 @@ get_secret() {
 }
 
 CENTER_DB_PASSWORD="$(get_secret center_db_password)"
-STATION_DB_PASSWORD="$(get_secret station_db_password)"
 [[ -n "${CENTER_DB_PASSWORD}" ]] || {
   echo "错误：${SEC_FILE} 缺少 center_db_password；请先运行 scripts/init-center.sh" >&2
   exit 1
 }
-[[ -n "${STATION_DB_PASSWORD}" ]] || {
-  echo "错误：${SEC_FILE} 缺少 station_db_password；请先运行 scripts/init-station.sh" >&2
-  exit 1
-}
 
-echo "db-init: 角色 center_app / station_app；库 ${CENTER_DB_NAME} / ${STATION_DB_NAME}"
+echo "db-init: 角色 center_app；库 ${CENTER_DB_NAME}"
 
 # psql 变量用 :'name' 做字面量引用；%I / %L 负责标识符与字符串转义。
 psql -v ON_ERROR_STOP=1 -d postgres \
   -v center_pw="${CENTER_DB_PASSWORD}" \
-  -v station_pw="${STATION_DB_PASSWORD}" \
-  -v center_db="${CENTER_DB_NAME}" \
-  -v station_db="${STATION_DB_NAME}" <<'SQL'
+  -v center_db="${CENTER_DB_NAME}" <<'SQL'
 SELECT format('CREATE ROLE center_app LOGIN')
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'center_app')
 \gexec
 
 ALTER ROLE center_app LOGIN PASSWORD :'center_pw';
 
-SELECT format('CREATE ROLE station_app LOGIN')
-WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'station_app')
-\gexec
-
-ALTER ROLE station_app LOGIN PASSWORD :'station_pw';
-
-SELECT format('CREATE DATABASE %I OWNER station_app', :'station_db')
-WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = :'station_db')
-\gexec
-
 SELECT format('ALTER DATABASE %I OWNER TO center_app', :'center_db')
-\gexec
-
-SELECT format('ALTER DATABASE %I OWNER TO station_app', :'station_db')
 \gexec
 
 SELECT format('REVOKE CONNECT, TEMPORARY ON DATABASE %I FROM PUBLIC', :'center_db')
 \gexec
 SELECT format('GRANT CONNECT ON DATABASE %I TO center_app', :'center_db')
-\gexec
-
-SELECT format('REVOKE CONNECT, TEMPORARY ON DATABASE %I FROM PUBLIC', :'station_db')
-\gexec
-SELECT format('GRANT CONNECT ON DATABASE %I TO station_app', :'station_db')
 \gexec
 SQL
 
@@ -146,18 +119,5 @@ SQL
 }
 
 migrate_public_objects "${CENTER_DB_NAME}" center_app
-migrate_public_objects "${STATION_DB_NAME}" station_app
 
-# 自检：交叉连接必须失败（用 PGPASSWORD 覆盖管理员口令）。
-if PGUSER=station_app PGPASSWORD="${STATION_DB_PASSWORD}" psql -v ON_ERROR_STOP=1 \
-  -d "${CENTER_DB_NAME}" -c 'SELECT 1' >/dev/null 2>&1; then
-  echo "错误：station_app 仍能连接 ${CENTER_DB_NAME}（隔离失败）" >&2
-  exit 1
-fi
-if PGUSER=center_app PGPASSWORD="${CENTER_DB_PASSWORD}" psql -v ON_ERROR_STOP=1 \
-  -d "${STATION_DB_NAME}" -c 'SELECT 1' >/dev/null 2>&1; then
-  echo "错误：center_app 仍能连接 ${STATION_DB_NAME}（隔离失败）" >&2
-  exit 1
-fi
-
-echo "db-init: 完成（center_app → ${CENTER_DB_NAME}；station_app → ${STATION_DB_NAME}）"
+echo "db-init: 完成（center_app → ${CENTER_DB_NAME}）"

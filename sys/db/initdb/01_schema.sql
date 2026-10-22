@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS upgrade_plans (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 规则发布命令队列（WarpStation → Center wparse-proxy → gwlinkd → 本机 wparse）。
+-- 规则发布命令队列（Center wparse-proxy → gwlinkd → 本机 wparse）。
 CREATE TABLE IF NOT EXISTS gateway_commands (
   command_id TEXT PRIMARY KEY,
   gateway_id TEXT NOT NULL,

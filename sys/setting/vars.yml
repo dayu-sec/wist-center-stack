@@ -36,9 +36,9 @@ system:
   #   CENTER_IMAGE_TAG       wist-center 的 release tag
   #   CENTER_WEB_IMAGE_TAG   wist-center-web 的 release tag
   - name: CENTER_IMAGE_TAG
-    value: v0.20.1-alpha
+    value: v0.21.0-alpha
   - name: CENTER_WEB_IMAGE_TAG
-    value: v0.11.0-alpha
+    value: v0.12.0-alpha
   # 观测镜像 tag（源前缀见 VM_REGISTRY）
   - name: VM_IMAGE_TAG
     value: v1.154.0
@@ -60,7 +60,7 @@ system:
   # **面分离**（公网 / 内网）——`*_BIND_IP` 控制“绑哪张网卡”：
   #   · **公网只开两个**：`CENTER_HOST_PORT`（网关面 `/api/v1/gateway/**`，mTLS）
   #     与 `GIT_PROXY_HOST_PORT`（Gateway 拉 CNB 仓库）；
-  #   · 其余全部绑 `127.0.0.1`：管理面、Web UI、WarpStation、PG、VM。
+  #   · 其余全部绑 `127.0.0.1`：管理面、Web UI、PG、VM。
   #   内网开放时把对应的 `*_BIND_IP` 改成内网网卡 IP；**不要**把管理面/数据库改成 0.0.0.0。
   - name: CENTER_BIND_IP
     value: 0.0.0.0        # 网关面：对外

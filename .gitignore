@@ -4,8 +4,7 @@
 # 中心制品镜像（版本发布下载/镜像下来的安装包）——本地数据，不入库；备走 `gops prj backup`
 /artifacts/
 
-# WarpStation 工作区（wp-rules / wp-infra 的 git clone）——现场数据，不入库；
-# 由 `STATION_KNOWLEDGE_DIR` 指定（默认 ./knowledge/station）。
+# 预留：站点侧本地数据目录（当前无内容）
 /knowledge/
 
 # 中心**运行期**配置与密钥（现场生成；含 admin token / hmac secret / JSON store）。

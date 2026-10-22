@@ -3,17 +3,14 @@
 #
 # 为什么需要它：wist* 镜像由发布流水线**双推** —— `ghcr.io/dayu-sec/*`（境外）与
 # `dy-sec.tencentcloudcr.com/cloud/*`（腾讯云 TCR，国内快），TCR 里本来就有；但
-# **postgres / victoria-metrics / wp-station / nginx / warp-parse 是上游镜像**
+# **postgres / victoria-metrics / nginx 是上游镜像**
 # （`docker.io/library/postgres`、`quay.io/victoriametrics/victoria-metrics`、
-# `ghcr.io/wp-labs/wp-station`、`docker.io/library/nginx`、`ghcr.io/wp-labs/warp-parse`），
+# `docker.io/library/nginx`），
 # TCR 里**没有**。内网 / 客户环境只方便拉 TCR 时，用本脚本把它们也推进同一个 `cloud` 命名空间，
 # 再按末尾提示把 compose 的镜像源指过来即可（本栈源前缀都是变量：
-# `PG_SPC` / `VM_SPC` / `WIST_SPC` / `STATION_SPC` / `WARP_SPC` / `NGINX_SPC`）。
+# `PG_SPC` / `VM_SPC` / `WIST_SPC` / `NGINX_SPC`）。
 #
-# `wist-center-sandbox`（后续安全加固的沙盒镜像）v1 不启用，不在本脚本范围。
-#
-# 注意：`ghcr.io/wp-labs/wp-station` 可能是私有包；推之前先 `docker login ghcr.io`，
-# 或把 `STATION_SPC` 指到已有该镜像的镜像仓库。
+# 注意：`nginx` 用官方镜像；推之前先 `docker login ghcr.io` / 相应 registry。
 #
 # 取镜像的**唯一源**是 `docker compose config --images` —— 让 Compose 自己解析 compose 里的
 # `${VAR}`（值来自 `sys/merged_vars.yml` 产品默认 + 栈根 `.env` 现场值），不在这里重造一份解析规则。

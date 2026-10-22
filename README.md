@@ -21,10 +21,8 @@
 | `web` | 管理前端入口（nginx：**终止 TLS** + 静态 + `/api` 反代到 center） | `${WEB_HOST_PORT}:443`（**HTTPS**） | `${CENTER_REGISTRY}/wist-center-web:${CENTER_WEB_IMAGE_TAG}` |
 | `postgres` | 中心存储（PgStore） | `${PG_HOST_PORT}:5432` | `${PG_REGISTRY}/postgres:${PG_IMAGE_TAG}` |
 | `victoria-metrics` | 状态历史时序库 | `${VM_HOST_PORT}:8428` | `${VM_REGISTRY}/victoria-metrics:${VM_IMAGE_TAG}` |
-| `db-init` | 一次性：创建 `center_app` / `station_app` 角色与库，收紧 `CONNECT` | 无 | `${PG_REGISTRY}/postgres:${PG_IMAGE_TAG}` |
+| `db-init` | 一次性：创建 `center_app` 角色与库，收紧 `CONNECT` | 无 | `${PG_REGISTRY}/postgres:${PG_IMAGE_TAG}` |
 | `db-schema` | 一次性：以 `center_app` 幂等套一遍 `sys/db/initdb/01_schema.sql` | 无 | `${PG_REGISTRY}/postgres:${PG_IMAGE_TAG}` |
-| `warp-station` | **规则管理 / 发布控制台**（自带前端 + API；v1 单容器直接执行工具链） | `${STATION_HOST_PORT}:8081` | `${STATION_REGISTRY}/wp-station:${STATION_IMAGE_TAG}` |
-| `warp-toolchain` | 一次性：把 `wparse/wpgen/wproj` 复制进命名卷 | 无 | `${WARPPARSE_REGISTRY}/warp-parse:${WARPPARSE_IMAGE_TAG}` |
 | `git-proxy` | Gateway 只读拉取外部 Git 的 Git 反代（路径白名单） | `${GIT_PROXY_HOST_PORT}:8443` | `${GIT_PROXY_REGISTRY}/nginx:${GIT_PROXY_IMAGE_TAG}` |
 
 > `db-schema` 是**一次性任务**（exit 0 即完），`center` 依赖 `db-init` / `db-schema`
@@ -37,16 +35,12 @@
 > 改**产品默认**改 `sys/setting/vars.yml`，改**本环境用什么**改 ops-prj 的
 > `values/<系统名>/sys_value.yml`（推荐；本仓不再跟踪 `values/`）。
 >
-> **新增三个上游镜像**（`wp-station` / `nginx` / `warp-parse`）TCR 里没有；发布前用
-> `./dev/push-images.sh --dry-run` 检查、需要时实推（脚本会自动从 compose 取镜像，不限于 wist*）。
-> `ghcr.io/wp-labs/wp-station` 可能是私有包，推之前先 `docker login ghcr.io`。
->
-> **v1 是单容器**：WarpStation 直接执行真实 `wparse/wpgen/wproj`（`warp-toolchain` 卷）。
-> “沙盒拆独立容器”作为后续安全加固项保留在 `sys/sandbox/`，当前 compose **不启用**。
+> **上游镜像**：`nginx` 不在 TCR 里（`postgres` / `victoria-metrics` 同样来自上游）；
+> 发布前用 `./dev/push-images.sh --dry-run` 检查、需要时实推（脚本会自动从 compose 取镜像）。
 >
 > **TLS + 两个域名、两个面**：`web` nginx 在容器内 **443** 上终止 TLS（证书 = 站点身份
 > `identity/center/control-center-server.{crt,key}`，由站点 CA 签，SAN 覆盖 `WEB_WGC_DOMAIN` /
-> `API_WGC_DOMAIN` / `WEB_WGS_DOMAIN`；`scripts/init-center.sh` 幂等备齐），宿主发布到
+> `API_WGC_DOMAIN`；`scripts/init-center.sh` 幂等备齐），宿主发布到
 > **`${WEB_BIND_IP}:${WEB_HOST_PORT}`**（默认回环）：
 > - `WEB_WGC_DOMAIN`——**管理面 / Web UI**（浏览器）；
 > - `API_WGC_DOMAIN`（默认 `api.<WEB_WGC_DOMAIN>`）——**网关面**：gwlinkd 直连 `:3100`（mTLS），
@@ -56,18 +50,11 @@
 > Web 的 `/api` 反代到 `:3102`。两个域名都必须能解析到本机，且在服务器证书 SAN 内。
 > `git-proxy` 复用同一张证书，server_name = `API_WGC_DOMAIN`，Gateway 用 Center CA 校验。
 >
-> **端口避让**：本栈 VictoriaMetrics 用 `28429`、前端入口 `2443`、WarpStation `18081`、
-> Git Proxy `18082`、wparse-proxy `18083`、管理面 `3102`，**刻意避开** `wist-gateway-stack` 的 `18429` / `8443` / `9000`
+> **端口避让**：本栈 VictoriaMetrics 用 `28429`、前端入口 `2443`、Git Proxy `18082`、
+> wparse-proxy `18083`、管理面 `3102`，**刻意避开** `wist-gateway-stack` 的 `18429` / `8443` / `9000`
 > —— 两个栈同机同时运行是常态，各自跑独立实例。
 >
-> **统一 Web 入口**：`web` nginx 在同一个 `${WEB_HOST_PORT}` 上按 `server_name` 分流：
-> `<WEB_WGC_DOMAIN>`（如 `wgc.<domain>`）→ 中心前端；`<WEB_WGS_DOMAIN>`（如 `wgs.<domain>`）→ WarpStation，
-> 后者带 basic auth（密码在 `.wist/sec-value.yml` 的 `station_web_password`）。WarpStation 自身的
-> `${STATION_HOST_PORT}` 仍只绑 `127.0.0.1`，供本机调试。
->
-> **WarpStation 是可选的“规则管理面”**：不接 Gateway 时它也能独立维护规则/配置、跑沙盒；
-> 要真正发布到 Gateway 的 WarpParse，还需要 Gateway 侧开启 admin API + project_remote、
-> Center 提供 `wparse-proxy`、gwlinkd 轮询执行（见下文「规则管理（WarpStation）」）。
+> **Web 入口**：`web` nginx 在同一个 `${WEB_HOST_PORT}` 上只服务 `<WEB_WGC_DOMAIN>`（中心前端）。
 
 ## 目录
 
@@ -85,22 +72,14 @@ wist-center-stack/
       center/wist-center.toml.tpl       # 中心**主配置**模板（渲染出 configs/center/wist-center.toml）
       center/wist-center-pub.toml.tpl   # **现场态声明**模板（渲染出 identity/center/wist-center-pub.toml）
       web/nginx.conf.tpl                # 前端站点配置模板（渲染出 configs/web/nginx.conf）
-      station/config.toml.tpl           # WarpStation 主配置模板（渲染出 configs/station/config.toml）
       git-proxy/nginx.conf.tpl          # Center Git Proxy 模板（渲染出 configs/git-proxy/nginx.conf）
-    sandbox/                  # 后续安全加固用（Go runner/client + Dockerfile）；v1 未启用
   # 注：本仓**不含** values/ —— 现场值由 ops-prj 维护在 <ops-prj>/values/<系统名>/sys_value.yml
   configs/                  # 运行期配置（现场生成，不入 git / 不入包）
     center/                 # 发布态：wist-center.toml（由模板渲染）+ state/（JSON store）+ logs/（中心日志）
     web/                    # 发布态：nginx.conf（由模板渲染）
-    station/                # WarpStation 运行期配置（随 configs/ 备份）：
-                            #   config.toml / station.env（渲染配置 + 密钥）
     git-proxy/              # Git Proxy 渲染物（nginx.conf + value.json；含 Git 读凭据，600）
-  knowledge/                # WarpStation 工作区（**独立挂载**，不入 git / 不进包；随备份）：
-    station/                #   wparse__models、wparse__infra（外部 Git 工作副本）
-                            #   wfusion__models、wfusion__infra（WarpStation 自动补齐）
   identity/                 # 站点身份 + 现场态（dev/prod 共用，含私钥，不入 git / 不入包）：
                             #   center/（CA + 服务器证书/私钥 + wist-center-pub.toml 声明 + .env 值）
-                            #   station/warparse-ca.pem（WarpStation 预加载的 WarpParse 信任根）
   artifacts/                # 制品镜像（版本发布下载下来的安装包；本地数据，不入 git / 不入包）
   .wist/                    # 运行期密钥（现场生成，不入 git）：
                             #   sec-value.yml（admin token / hmac secret / DB app 密码 / Git 读写 token）
@@ -111,8 +90,7 @@ wist-center-stack/
     ensure-center-server-cert.sh  # 服务器证书（叶）SAN 覆盖对外域名（幂等重签，不动 CA）
     init-center-pub.sh      # 现场态**值**（CENTER_PUBLIC_URL）→ identity/center/.env（按缺补齐）
     init-web-conf.sh        # 前端站点配置的渲染值（幂等；域名取 WEB_WGC_DOMAIN）
-    init-station.sh         # WarpStation/Git Proxy 渲染值 + 外部 Git 预克隆 + WarpParse CA + 对接片段
-    db-init.sh              # 一次性：创建 center_app / station_app 角色与库，收紧 CONNECT
+    db-init.sh              # 一次性：创建 center_app 角色与库，收紧 CONNECT
   dev/                      # 开发态：本地二进制 + vite（单一入口 svc.sh）
     svc.sh                  # 统一入口：start / stop / restart / status / token（组件 deps|center|web）
     lib.sh                  # 公共函数（svc.sh source 它）
@@ -125,8 +103,7 @@ wist-center-stack/
 > **数据目录**：
 > - 开发态的本地 JSON store 落在 `wist-center-stack/.run/`（已 gitignore；可随手清）。
 > - **站点身份 + 现场态统一落 `<栈根>/identity/`**（dev/prod 共用）：
->   `center/` 下是中心 CA / 服务器证书 / 私钥 + `wist-center-pub.toml` 声明 + `.env` 值；
->   `station/` 下是 WarpStation 预加载的 `warparse-ca.pem`（默认 = 中心 CA）。整体作**对外契约**
+>   `center/` 下是中心 CA / 服务器证书 / 私钥 + `wist-center-pub.toml` 声明 + `.env` 值。整体作**对外契约**
 >   （`sys-prj.yml` 的 `contract: - identity`），不随资源树被升级覆盖；compose 只读挂载其中需要的文件。
 >   丢了中心 CA 私钥 = 换锚（所有网关要重发信任根），故备份/迁移必带它。
 >   **备份走 `gops prj contract export`**（产物在 `ops-prj.yml: contract.target`）：`gops prj backup`
@@ -136,8 +113,6 @@ wist-center-stack/
 >   `/wist-center/artifacts`）—— 它是发布时下载/镜像下来的安装包，属数据、不属配置，故与 `configs/`
 >   分开（便于单独备份；哪些进 `gops prj backup` 见 `sys-prj.yml` 的 `backup:` 表）。
 > - 发布态配置落挂载卷 `configs/center/`（`state/` 存 JSON store；用 PostgreSQL 时不用）。
-> - WarpStation 的规则/配置/密钥落 `configs/station/`（随 `configs/` 进 `gops prj backup`）；
->   git 历史以外部 Git 私有仓库为准（本地工作副本可重建）。
 
 ## 发布态（经 gops 管理）
 
@@ -162,7 +137,7 @@ wist-center-stack/
 | gops | **必须 ≥ 2.9**（`secrets.mode` / `perms.services` 需要；旧版会在解析 `sys-prj.yml` 时失败） | `gops -V` |
 | gx | **≥ 0.14**（`localize` 阶段流程；缺失时 `localize` 只写 `.env`，权限 `--apply` 也不会执行） | `gx -V` |
 | 执行账号 | 普通账号 + **已加入 `docker` 组**；部署目录由它拥有 | `id -nG`（输出里应含 `docker`） |
-| 端口 | 宿主 `${CENTER_HOST_PORT}` / `${WPARSE_PROXY_HOST_PORT}` / `${WEB_HOST_PORT}` / `${PG_HOST_PORT}` / `${VM_HOST_PORT}` / `${STATION_HOST_PORT}` / `${GIT_PROXY_HOST_PORT}` | 见 `sys/setting/vars.yml` |
+| 端口 | 宿主 `${CENTER_HOST_PORT}` / `${WPARSE_PROXY_HOST_PORT}` / `${WEB_HOST_PORT}` / `${PG_HOST_PORT}` / `${VM_HOST_PORT}` / `${GIT_PROXY_HOST_PORT}` | 见 `sys/setting/vars.yml` |
 
 ### 变量与本地化
 
@@ -186,19 +161,16 @@ gops sys localize
 （**本地定义**，不引外部 ops-gxl），由 `_gal/work.gxl` 的 `mod main : operators` 纳入；合并后的值以
 **环境变量**注入该流程（用 `$(printenv XXX)` 读）。流程里做六件**幂等**的事：
 
-1. 确保 `configs/center`、`configs/web`、`configs/station`、`configs/git-proxy`、`identity/center`、`artifacts` 存在；
+1. 确保 `configs/center`、`configs/web`、`configs/git-proxy`、`identity/center`、`artifacts` 存在；
 2. 备料控制中心：CA（信任根 + 服务器证书，落站点身份 `identity/center/`）+ 渲染值
    `configs/center/wist-center.value.json` + `configs/center/center.env`
    （`center_app` 的 PG 凭据，600；`scripts/init-center.sh`，密钥缺失/为空直接报错）；
    再**渲染现场态声明** `identity/center/wist-center-pub.toml`（`gx.tpl`，只有 `${VAR}`、可重渲）
    并由 `scripts/init-center-pub.sh` 按缺补齐**现场态值** `identity/center/.env`（永不重渲）；
 3. 渲染 `configs/center/wist-center.toml`（模板在 `sys/configs/center/wist-center.toml.tpl`）；
-4. 备料 WarpStation / Git Proxy：**校验** `.wist/sec-value.yml` 的 `station_db_password` /
-   `wp_git_push_token` / `wp_git_pub_token` / `wp_git_push_user` / `wp_git_pub_user`（缺失或为空直接报错，
-   不生成、不补键）；预克隆两个外部 Git 私有仓库到
-   `knowledge/station/wparse__models` / `wparse__infra`；写 `station.env` / `git-proxy.value.json`；复制中心 CA 到
-   `identity/station/warparse-ca.pem`；生成 Gateway 对接片段；渲染 `configs/station/config.toml` 与
-   `configs/git-proxy/nginx.conf`；
+4. 备料 Git Proxy：**校验** `.wist/sec-value.yml` 的 `wp_git_pub_token` / `wp_git_pub_user`
+   （缺失或为空直接报错，不生成、不补键）；写 `git-proxy.value.json`，
+   渲染 `configs/git-proxy/nginx.conf`；
 5. 写前端站点配置的渲染值 + 渲染 `configs/web/nginx.conf`（`scripts/init-web-conf.sh` + 模板）；
 6. **宿主属主/权限对齐**（`gops sys perms --apply`，gops ≥ 2.7；见下「权限与运行身份」；非 Linux 自动跳过）——
    必须在 `docker compose up` **之前**：Docker 会把缺失的挂载源目录自行建成 `root:root`，
@@ -241,46 +213,26 @@ maybe="$(sec_get_optional "${STACK_ROOT}" some_key)"    # 键缺失 → 空串�
 center_admin_token: <中心管理面 token>
 center_hmac_secret: <RegistToken 派生密钥>
 center_db_password: <center_app 的 PG 密码>        # 不能是纯数字
-station_db_password: <station_app 的 PG 密码>      # 不能是纯数字
-station_web_password: <WarpStation 控制台的 basic auth 密码>
 
-# 外部 Git（与提供商无关；用户名不是密钥，也放这里方便现场维护）
-#   push = WarpStation 写上游（clone/push/tag）；pub = Git Proxy 读上游（供 Gateway 拉取）
-wp_git_push_user: <写账号>
-wp_git_push_token: <写 token>
+# 外部 Git 只读凭据（Git Proxy 用；供 Gateway 拉取仓库）
 wp_git_pub_user: <读账号>
 wp_git_pub_token: <读 token>
 ```
 
-两组凭据是**两个独立身份**，可以指向同一个账号，也可以分别用写/只读 token：
-`wp_git_push_*` 只出现在 WarpStation 的 `station.env`；`wp_git_pub_*` 只出现在
-Git Proxy 的 `nginx.conf`（注入 `WP_GIT_AUTH_HEADER`，默认 `Authorization: Basic ...`）。
-换 Git 提供商时只改 URL 与可选的头名，不改变量名。
+Git Proxy 把 `wp_git_pub_*` 注入 `WP_GIT_AUTH_HEADER`（默认 `Authorization: Basic ...`）写进
+`configs/git-proxy/nginx.conf`；换 Git 提供商时只改 URL 与可选的头名，不改变量名。
 
-CNB 的权限坑（实测）：token 必须带 **`repo-code:r`**（读）；`wp_git_push_token` 还要
-**`repo-code:w`**（写）。作用域要覆盖 **两个仓库**（建议建在 `dy-sec/jingang-cust` 组上）。
-缺 `repo-code:r` 时 push 会失败（git push 先要读 ref）；作用域不含某仓库时 CNB 返回
+CNB 的权限坑（实测）：token 必须带 **`repo-code:r`**（读），作用域要覆盖 **两个仓库**
+（建议建在 `dy-sec/jingang-cust` 组上）。作用域不含某仓库时 CNB 返回
 `Repository Not Found`（而不是 403），容易误判成“仓库写错”。
 
 - 中心配置里只写 `${SEC_CENTER_*}` 占位，由 `WIST_CENTER_SEC_FILE` 指向本文件解析；
-- `db-init` 从本文件读取两个 app 密码，创建角色并收紧 `CONNECT`；
-- `init-station.sh` 把写 token/账号写进 `configs/station/station.env`、把读账号/token 写进
-  `configs/git-proxy/nginx.conf`（两者都 600，且随 `configs/` 进备份）；
-- 两个 DB 密码都**不能是纯数字**（WarpStation 用 `config` crate 的 `try_parsing`，纯数字会被当成整数
-  导致反序列化失败）；脚本会直接拒绝纯数字值。
+- `db-init` 从本文件读取 `center_db_password`，创建角色并收紧 `CONNECT`；
+- `center_db_password` **不能是纯数字**（避免被配置加载层的 `try_parsing` 误判类型）；脚本会直接拒绝。
 
-外部 Git 凭据**只从** `.wist/sec-value.yml` 读取（不要写进 `values/` 或 `vars.yml`）：
-
-```yaml
-# <栈根>/.wist/sec-value.yml（0640：属主=部署账号、属组=999）
-wp_git_push_user: <写账号>
-wp_git_push_token: <写 token>
-wp_git_pub_user: <读账号>
-wp_git_pub_token: <读 token>
-```
-
-然后跑 `gops sys localize`：`init-station.sh` 从该文件读取这四个键（缺失/为空直接报错），
-渲染 `station.env` 与 `configs/git-proxy/nginx.conf`。密钥文件是 0640（属主=部署账号、属组=999）、
+外部 Git 凭据**只从** `.wist/sec-value.yml` 读取（不要写进 `values/` 或 `vars.yml`）。
+然后跑 `gops sys localize`：流程从该文件读取这两个键（缺失/为空直接报错），
+渲染 `configs/git-proxy/nginx.conf`。密钥文件是 0640（属主=部署账号、属组=999）、
 已在 `.gitignore` 里，不会进 shell history / 进程列表。
 
 > 一次性前置（管理员）：部署账号加入 gid 999（`usermod -aG 999 <deploy>`），`.wist` 用 setgid
@@ -291,16 +243,14 @@ wp_git_pub_token: <读 token>
 > 对齐该目录（否则它会被当作 root 服务跳过）。
 
 > CI 场景：先由部署账号把密钥文件写到目标机（0640，属组=999），再跑 `gops sys localize`。
-> token **不接受**环境变量注入；`wp_git_*_user` 仍可用 `WP_GIT_PUSH_USER` / `WP_GIT_PUB_USER`
-> （来自 `vars.yml`）兜底。
+> token **不接受**环境变量注入。
 
-> **改完 token 后要重建容器**：`station.env` 是 `env_file`（容器创建时读取），
-> `configs/git-proxy/nginx.conf` 是单文件 bind mount（原子替换后 inode 变）。
+> **改完 token 后要重建容器**：`configs/git-proxy/nginx.conf` 是单文件 bind mount（原子替换后 inode 变）。
 > `gops run start` 本质是 `docker compose up -d`，**不保证**重建；请显式执行：
 
 ```bash
 docker compose --project-directory . -f sys/docker-compose.yml \
-  up -d --force-recreate warp-station git-proxy
+  up -d --force-recreate git-proxy
 ```
 
 ### 前置：挂载文件
@@ -327,16 +277,9 @@ compose 还挂这些路径：
    ① `/docker-entrypoint-initdb.d`（**仅首次**初始化空数据卷时由 postgres 入口脚本执行）；
    ② `db-schema` 一次性服务挂到 `/schema`，**每次 `start` 幂等套一遍**（覆盖既有数据卷的补列）。
    它与 `wist-center/docker/initdb/01_schema.sql` 同源，改中心 schema 时两处要同步。
-5. `configs/station/` —— WarpStation 渲染配置（`config.toml`，只读）与 `station.env`（env_file）。
-6. `knowledge/station/` —— 两个外部 Git 工作副本（`wparse__models/` / `wparse__infra/`，读写），
-   通过 `STATION_KNOWLEDGE_DIR` 独立挂载到 `/app/gitea`；由 `init-station.sh` 预克隆。
-   **不要**把 token 写进这两个 git 工作副本。
-6. `configs/git-proxy/nginx.conf` —— Git Proxy 的完整 nginx 配置（只读挂到 `/etc/nginx/nginx.conf`）。
-   含路径白名单与 Git 读凭据；由 `init-station.sh` 生成 value.json、`gx.tpl` 渲染，权限 600。
+5. `configs/git-proxy/nginx.conf` —— Git Proxy 的完整 nginx 配置（只读挂到 `/etc/nginx/nginx.conf`）。
+   含路径白名单与 Git 读凭据；由流程生成 value.json、`gx.tpl` 渲染，权限 600。
    证书复用 `identity/center/control-center-server.{crt,key}`。
-7. `sys/sandbox/` —— **后续安全加固项**（仓库自带，v1 compose 不引用）。里面的 Go
-   runner/client 用于“规则执行拆独立容器”；当前单容器模式直接使用 `warp-toolchain` 卷里的
-   真实 `wparse`/`wpgen`/`wproj`。
 
 ### 权限与运行身份（Linux 必读）
 
@@ -385,8 +328,6 @@ gops sys perms --apply    # 幂等修复
 - 中心 API：`https://<host>:${CENTER_HOST_PORT}`（compose 配了服务器证书 → 中心本身就是 **HTTPS**；
   网关侧走 mTLS，浏览器/脚本可用 `-k` 或带站点 CA 校验证书）
 - 管理 token：见上「密钥」里的 `center_admin_token`
-- 规则管理（WarpStation）：`https://<WEB_WGS_DOMAIN>:${WEB_HOST_PORT}`（同一 nginx 入口，basic auth）；
-  本机调试仍可 `http://<host>:${STATION_HOST_PORT}`（只绑 `127.0.0.1`，默认 `admin / 123456`）
 - 起停与排查：
 
 ```bash
@@ -423,130 +364,35 @@ gops run status
 > 在维护工程根（如 `wcenter-alpha/`）执行 `gops run start` 会被当成工程的 `main` 流程，
 > 报 `Galaxy Flow Parse Error … detail: start` —— 不是栈坏了，是目录错了。
 
-## 规则管理（WarpStation）
+## 规则管理（WarpStation 集成已移除）
 
-WarpStation 是**独立的规则/配置控制台**（镜像自带前端 + API），与中心后端解耦：中心挂了不影响
-规则维护；但“发布到 Gateway”依赖 Center 的命令通道。
+本栈**不再部署** wp-station / warp-toolchain，也不再创建 `station_app` 库/角色、不再提供
+`station.*` 虚拟主机与 basic auth；`sys/sandbox/`、`knowledge/station/`、`configs/station/`
+随之移除。规则/配置的编辑与沙盒验证改由外部流程承担。
 
-| 项 | 值 |
-|---|---|
-| 控制台 | `http://127.0.0.1:${STATION_HOST_PORT}`（默认 `18081`，**只绑回环**） |
-| 默认账号 | `admin / 123456`（**首次登录后立即修改**） |
-| 暴露面 | **⚠ 上游 v0.2.14 的 API 没有鉴权**：登录只发 token，后端不校验；因此 compose **只发布到 `127.0.0.1`**。不要改成 `0.0.0.0`/对外端口；远程访问用 SSH 隧道，或在 Center web 前加认证反代（TODO） |
-| 规则/配置主数据源 | `knowledge/station/wparse__models/`（wpl / oml / knowledge）<br>`knowledge/station/wparse__infra/`（conf / topology / connectors） |
-| 版本仓库 | 外部 **Git 私有仓库**（当前部署为 CNB：`wp-rules` / `wp-infra`）；**git-only**，不依赖 Git 服务 API |
-| 沙盒校验 | v1 单容器：`warp-toolchain` 卷里的真实 `wparse` / `wpgen` / `wproj`（来自 `${WARPPARSE_REGISTRY}/warp-parse:${WARPPARSE_IMAGE_TAG}`） |
-| 系统库 | 与中心共用 PostgreSQL 实例，但**独立库/账号**：`station_app` → `wp-station`；`center_app` → `insight_demo` |
-| 密钥 | Git 写 token：`.wist/sec-value.yml` → `configs/station/station.env`<br>DB：`station_db_password` 渲染进 `config.toml` 并写入 `station.env`（均 600/640） |
+Center 仍保留三项与规则发布相关、且**与 WarpStation 解耦**的能力：
 
-### Git 链路（规则/配置版本化）
+| 能力 | 位置 | 说明 |
+|---|---|---|
+| tag 列表 | `[wparse_release]`（`sys/configs/center/wist-center.toml.tpl`） | 只读 CNB 仓库 tag；`WP_RULES_REPO_URL` / `WP_INFRA_REPO_URL` 配齐才启用 |
+| 发布命令通道 | `wparse-proxy`（`${WPARSE_PROXY_HOST_PORT}:3101`）+ 命令队列 | 调用方投递命令 → `gwlinkd` 轮询 → 本机 `wparse` admin API |
+| 仓库只读代理 | `git-proxy`（`${GIT_PROXY_HOST_PORT}:8443`） | Gateway 的 `project_remote` 从这里拉规则/配置 |
 
-```text
-WarpStation --(git push/tag, CNB 写 token)--> CNB 私有仓库
-Gateway wparse --(git fetch, 无 CNB 凭据)--> Center Git Proxy :${GIT_PROXY_HOST_PORT} --(CNB 读 token)--> CNB
-```
-
-- `init-station.sh` 预克隆两个仓库到 `knowledge/station/`（`STATION_KNOWLEDGE_DIR`）；已有 `.git` 且 `origin`
-  未变时保留现场改动；**`origin` 变了会先校验工作区无未提交改动，再 fetch + 硬重置到新远端 `main`**（否则旧历史
-  会被下次 push 带到新仓库）。默认分支必须是 `main`，并校验 `wp-rules/models/`、`wp-infra/conf/`
-  （可用 `STATION_SKIP_REPO_CHECK=1` 临时跳过）。
-- WarpStation 检测到 `.git` 已存在会跳过 `init_gitea_repo`，因此**不会调用任何 Git 服务 API**。
-- CNB 写 token 只在 WarpStation 主容器；读 token 只在 Git Proxy。
-- Gateway 的 `[project_remote]` 用 `${WPARSE_PROJECT_*_REPO}` 占位，真实地址由 Gateway 容器环境注入。
-
-### 控制链路（发布触发）
-
-```text
-WarpStation --(HTTPS + per-gateway proxy token)--> Center wparse-proxy :3101
-Center --(gateway_commands 队列)--> gwlinkd --(出站 mTLS，1–2s 轮询)--> 本机 wparse :19090
-```
-
-- WarpStation 设备填 **Center `wparse-proxy`** 的地址与 token（`POST /api/v1/admin/gateways/{id}/wparse-proxy-token`
-  生成，绑定 `gateway_id`），**不要**填 Gateway 管理面地址，也不要用网关 mTLS 证书或 wparse admin token。
-  - **同栈部署**（WarpStation 与 Center 在同一个 compose）：设备地址用 `${WEB_WGC_DOMAIN}`、
-    端口用 **`3101`**（compose 网络别名，容器内直达 Center 代理，不经过宿主端口/host-gateway）；
-  - **外部 WarpStation**：用 `https://<center-domain>:${WPARSE_PROXY_HOST_PORT}`（默认 `18083`）。
-- Center 只接受 `POST /admin/v1/reloads/model` 与 `GET /admin/v1/runtime/status`；超时返回 `202`，
-  WarpStation 后续轮询状态。
-- Gateway **不开放任何入站端口**：wparse 在容器内绑 `0.0.0.0:19090` + TLS，宿主只发布
-  `127.0.0.1:19090`；只有本机 gwlinkd 能访问。
-
-**设备 provisioning（不需要人工复制 token）**：
-
-```bash
-# 幂等：设备已在线就不动；地址/端口不符或 token 失效时才修正
-scripts/provision-station-device.sh
-
-# 强制轮换 proxy token（旧 token 立即失效）
-scripts/provision-station-device.sh --rotate
-```
-
-脚本读取 `.env` / `.wist/sec-value.yml`，调 Center 管理面签发 per-gateway proxy token，
-再直接 `PUT/POST /api/devices` 写入设备记录；**token 不打印到终端**，Center 只存 SHA-256。
-默认不轮换，避免每次部署把在线设备的 token 换掉；需要轮换时显式 `--rotate`。
-
-> 为什么需要它：proxy token 的明文只在签发响应里出现一次，WarpStation 上游没有“生成 token”
-> 的能力，设备表单只能接收一个现成字符串。手工流程是“Center 签发 → 复制到设备表单”，
-> 脚本把这两步合成一步。
-
-**备份**：`configs/station/`（工作副本、`config.toml`、`station.env`）与 `configs/git-proxy/`
-随 `configs/` 进 `gops prj backup`；**版本历史以 CNB 为准**，本地工作副本可重建。备份含 CNB token
-与 DB 密码，必须加密并限制访问；泄露后立即轮换 token（重跑 localize 并带新环境变量即可）。
-
-**工作流**：规则/配置保存 → commit/push 到 CNB → 沙盒验证（v1 在 WarpStation 容器内跑真实 `wparse/wpgen`）
-→ 打 tag → 调 Center `wparse-proxy` 触发目标 Gateway 重载。发布前必须有一次通过的沙盒任务
-（可用 `WARP_STATION_SKIP_SANDBOX=1` 跳过，不推荐）。
-
-> **改了 `config.toml` / `nginx.conf` / token 后要重建容器**：`config.toml`、`nginx.conf` 是
-> **单文件 bind mount**（`gx.tpl` 原子替换后 inode 变，旧容器仍看旧文件），`station.env` 是
-> `env_file`（容器创建时读取）。`gops run start` 是 `docker compose up -d`，不保证重建；
-> 请显式用 `docker compose ... up -d --force-recreate warp-station git-proxy`。
-
-> **首次启动后必须先改 infra 的 `conf/wparse.toml`**：WarpStation 的内置默认配置里
-> `[project_remote]` 指向上游自带的 `localhost:3000`。请在「配置管理」里把
-> `[project_remote]` / `[admin_api]` 改成 `configs/station/gateway-wparse-snippet.toml` 的内容，
-> 保存并发布一次 infra；否则 Gateway 拉到 infra 后会把配置改回 localhost。
-
-### 对接 Gateway 的 WarpParse
-
-WarpStation 只负责“规则维护 + 版本化 + 发布指令”，真正落地还需要 Gateway 侧满足下面四条。
-**当前 `wist-gateway-stack` 的 wparse 把 `data-plane/*` 只读挂载、且未暴露管理面；
-直接发布是走不通的，需要按本节改造 Gateway 的运行方式。**
-
-1. **管理面（容器内 TLS，宿主回环）**：`conf/wparse.toml` 开启 `[admin_api]`，绑定
-   `0.0.0.0:19090`，开启 `[admin_api.tls]`（WarpParse 规定非回环绑定必须 TLS），
-   `[admin_api.auth].token_file` 指向 Gateway localize 生成的 `data-plane-run/.run/admin_api.token`。
-   compose **只发布** `127.0.0.1:19090:19090`；**不要**写成 `0.0.0.0:19090:19090`。
-   - 证书复用 Gateway 的 `admin-tls`；gwlinkd 用 `identity/gateway/public/gateway-ca.crt.pem` 校验。
-2. **工作根可写**：`[project_remote]` 会往工作根写 `models/ conf/ topology/ connectors/`，
-   所以 wparse 的 `--work-root` 必须是**可写目录**。推荐：`data-plane/` 只读挂到 `/seed`，
-   `data-plane-run/work` 可写挂到 `/data`，启动时 `cp -an /seed/. /data/`（只补缺失）。
-3. **双仓库远端**：`conf/wparse.toml` 配 `[project_remote] enabled = true`、`repo = ""`，并分别配
-   `[project_remote.models].repo` / `[project_remote.infra].repo` 为 `${WPARSE_PROJECT_*_REPO}` 占位；
-   值由 Gateway 容器环境注入（Center Git Proxy 地址，见 `configs/station/gateway-wparse-snippet.toml`）。
-4. **网络**：Gateway 主机能访问 Center `${GIT_PROXY_HOST_PORT}`（Git）与 `${CENTER_HOST_PORT}`（gwlinkd mTLS）；
-   Gateway 不需要能访问 CNB。
-
-然后在 WarpStation「设备管理」新增设备：
-
-- **IP/域名 + 端口**：外部用 Center `wparse-proxy`（`https://<center-domain>:${WPARSE_PROXY_HOST_PORT}`）；
-  同栈 WarpStation 用 `${WEB_WGC_DOMAIN}:3101`（compose 网络别名）；
-- **Token**：Center 为该 `gateway_id` 生成的 proxy token（明文只显示一次）。
-
-发布按 **models / infra** 分组；WarpStation 对每台设备调用
-`POST /admin/v1/reloads/model`（`update=true` + `group=models|infra` + `version=<tag>`），
-Center 入队，gwlinkd 在 1–2s 内取到并热重载。
+Gateway 侧要支持「从 Center 拉取规则」，仍需开启 `admin_api`（TLS）与 `project_remote`、
+并用中心 CA 校验 Git Proxy 的服务器证书；字段见 `wist-gateway-stack` 的
+`data-plane/conf/wparse.toml`。
 
 ## 开发态（本地二进制）
 
 ```bash
-# 起全套（deps + center + web）：
+# 起全套（deps + proxy + center + web）：
 ./dev/svc.sh start
 
-# 只起/另起某组件（deps | center | web），可组合：
+# 只起/另起某组件（deps | proxy | center | web），可组合：
 ./dev/svc.sh start center         # 只起后端
 ./dev/svc.sh start web            # 只起前端
 ./dev/svc.sh start deps           # 第三方依赖：PostgreSQL 55432 + VictoriaMetrics 28429
+./dev/svc.sh start proxy          # Git Proxy 18082（发布 wparse-rules / wparse-infra 必需）
 ./dev/svc.sh start all            # = start（全部组件）
 
 # 看状态 / 停止 / 取管理 token：
@@ -577,6 +423,15 @@ hmac secret）；发布态不用它，改走上面的 gops 密钥。dev 的**站
 
 > **接入本机网关**：把本机网关栈接到这个中心，在网关页「链接上级」提交接入链接即可 —— gwlinkd
 > （网关**宿主侧**常驻、随网关走）归 `wist-gateway-stack` 仓，由那边 `./dev/svc.sh start` 带起。
+
+> **发布规则 / 配置必须起 `proxy`**：dev 的中心只负责**读 tag**（直连 CNB），真正把规则拉下来的是
+> 网关里的 `wparse`，它走 `project_remote` 从 Git Proxy（`:18082`）拉 `wp-rules` / `wp-infra`。
+> 不起 Git Proxy 时发布会在网关侧失败：`wparse 上游返回 500` / `Info: fetch remote tags failed`。
+> Git Proxy 直接用发布态渲染好的 `configs/git-proxy/nginx.conf` + `identity/center/control-center-server.{crt,key}`，
+> 缺这两份就先在发布态 `gops sys localize`（证书缺还要跑 `scripts/gen-center-ca.sh`）。
+
+`deps` / `proxy` 刻意**复用发布态的容器**：两栈目录同名（`wist-center-stack`），compose 项目名相同，
+所以 dev 与发布态共用 postgres / victoria-metrics / git-proxy 的容器与数据卷（省一套实例，但**清库即两边都清**）。
 
 前端如果没有装依赖，先执行一次：
 
