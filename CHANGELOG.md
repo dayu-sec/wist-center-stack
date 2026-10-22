@@ -3,6 +3,24 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.4.0-alpha] - 2026-10-22
+
+### 变更
+
+- **中心后端 `CENTER_IMAGE_TAG` → `v0.20.0-alpha`**：规则 / 配置发布入口（`wparse-rules` / `wparse-infra`）。
+- **中心前端 `CENTER_WEB_IMAGE_TAG` → `v0.11.0-alpha`**：发布页新增两个入口，选 tag 后直接发布。
+
+### 新增
+
+- **Center 规则 / 配置发布入口**：`[wparse_release]` 由 `WP_RULES_REPO_URL` / `WP_INFRA_REPO_URL`
+  渲染；两个都配了才 `enabled = true`，只配一个时保持关闭并告警。
+- tag 读取复用 `.wist/sec-value.yml` 的 `wp_git_pub_token`（`${SEC_WP_GIT_PUB_TOKEN}`）；
+  CNB 访问令牌需补 `repo-release:r`（`repo-code:r` 只够 Git clone/fetch）。
+
+### 兼容
+
+- 未配置两个 repo 的现场不受影响；Center 不会因缺少 token 占位而拒启（repo 段整段不渲染）。
+
 ## [0.3.9-alpha] - 2026-10-21
 
 ### 变更
