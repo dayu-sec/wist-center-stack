@@ -105,6 +105,39 @@ cos_bucket = "github-1347593047"
 cos_prefix = "wist-knowledge"
 cos_region = "ap-hongkong"
 
+# 规则 / 配置发布入口（wparse-rules / wparse-infra）。
+# tag 列表只读；发布复用 [wparse_proxy] 的命令队列（gwlinkd relay 原样执行）。
+# 两个 repo 的 URL 来自 vars 的 WP_RULES_REPO_URL / WP_INFRA_REPO_URL；
+# 只配了一个 / 都没配时 `enabled = false`，不渲染 repo 段，也不要求 SEC token。
+[wparse_release]
+{{#if wparse_release_enabled}}
+enabled = true
+{{else}}
+enabled = false
+{{/if}}
+tag_cache_seconds = 60
+allow_manual_tag = false
+max_targets = 20
+
+{{#if wparse_release_enabled}}
+[[wparse_release.repos]]
+name = "wparse-rules"
+group = "models"
+provider = "cnb"
+repo = "{{wp_rules_repo}}"
+# 复用 Git 读 token；CNB 访问令牌需 repo-release:r（缺该 scope 时 tag 列表会 401/403）。
+token = "${SEC_WP_GIT_PUB_TOKEN}"
+tags_limit = 100
+
+[[wparse_release.repos]]
+name = "wparse-infra"
+group = "infra"
+provider = "cnb"
+repo = "{{wp_infra_repo}}"
+token = "${SEC_WP_GIT_PUB_TOKEN}"
+tags_limit = 100
+{{/if}}
+
 [enrollment]
 # 启动时写入 store（仅缺失时写入）的网关种子凭据，每项 `gateway_id:token`。
 gateway_credentials = []

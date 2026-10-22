@@ -51,6 +51,32 @@ PG_SUPERUSER_PASSWORD="${PG_SUPERUSER_PASSWORD:-demo}"
 PG_DB="${PG_DB:-insight_demo}"
 VICTORIA_METRICS_URL="${VICTORIA_METRICS_URL:-}"
 GATEWAY_IMAGE="${GATEWAY_IMAGE:-wist-gateway:latest}"
+# 规则 / 配置发布入口：两个 repo 都配了才启用（tag 列表 + 发布都要有目标仓库）。
+# 只配一个时保持关闭，避免中心因为 repo 为空起不来；运维补齐后再重新 localize。
+WP_RULES_REPO_URL="${WP_RULES_REPO_URL:-}"
+WP_INFRA_REPO_URL="${WP_INFRA_REPO_URL:-}"
+WPARSE_RELEASE_ENABLED="false"
+if [[ -n "${WP_RULES_REPO_URL}" && -n "${WP_INFRA_REPO_URL}" ]]; then
+  WPARSE_RELEASE_ENABLED="true"
+elif [[ -n "${WP_RULES_REPO_URL}" || -n "${WP_INFRA_REPO_URL}" ]]; then
+  echo "  ⚠ 只配置了一个 Git repo（WP_RULES_REPO_URL / WP_INFRA_REPO_URL），wparse_release 保持关闭" >&2
+fi
+# 两个 URL 会原样写进 value.json；含引号 / 反斜杠 / 换行会破坏 JSON，提前拒掉。
+case "${WP_RULES_REPO_URL}${WP_INFRA_REPO_URL}" in
+  *'"'* | *'\'* | *$'\n'* | *$'\r'*)
+    echo "错误：WP_RULES_REPO_URL / WP_INFRA_REPO_URL 含 JSON 非法字符（引号 / 反斜杠 / 换行）" >&2
+    exit 1
+    ;;
+esac
+# 已启用时必须能解析 `${SEC_WP_GIT_PUB_TOKEN}`：缺失会让中心启动时才报“未解析变量”，
+# 在这里提前说清楚（不打印 token 值）。
+if [[ "${WPARSE_RELEASE_ENABLED}" == "true" ]]; then
+  WP_GIT_PUB_TOKEN_CHECK="$(sec_get_optional "${STACK_ROOT}" wp_git_pub_token)"
+  if [[ -z "${WP_GIT_PUB_TOKEN_CHECK}" ]]; then
+    echo "错误：wparse_release 已启用，但 .wist/sec-value.yml 缺少 wp_git_pub_token（CNB 需 repo-release:r）" >&2
+    exit 1
+  fi
+fi
 
 note() { echo "  $*"; }
 
@@ -197,7 +223,10 @@ cat >"${tmp}" <<EOF
   "victoriametrics_url": "${VICTORIA_METRICS_URL}",
   "ca_cert_path": "/wist-center/ca/control-center.pem",
   "artifact_dir": "artifacts",
-  "gateway_image": "${GATEWAY_IMAGE}"
+  "gateway_image": "${GATEWAY_IMAGE}",
+  "wparse_release_enabled": ${WPARSE_RELEASE_ENABLED},
+  "wp_rules_repo": "${WP_RULES_REPO_URL}",
+  "wp_infra_repo": "${WP_INFRA_REPO_URL}"
 }
 EOF
 chmod 644 "${tmp}"
