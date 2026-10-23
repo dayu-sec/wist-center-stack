@@ -368,10 +368,9 @@ STACKCHECK_OFFLINE=1 ./scripts/check-stack.sh   # 离线站点：跳过镜像可
 开发态没有预编译件时自动回落 `cargo run`；**找不到可执行件直接退出 2**（静默跳过等于检查没做）。
 
 **通用引擎在公共仓 [`wist-stack-tools`](https://github.com/dayu-sec/wist-stack-tools) 的
-`stackcheck-core`**：本仓只保留 `tools/stackcheck/src/profile.rs`（center 的路径/变量/挂载对）
-和 `checks.rs`（center 的 TLS 策略）。依赖**首次发布前按 `tag` 固定**；crates.io 发布后
-改成 registry 版本 `wist-stackcheck-core = "0.1"`，再跑一次
-`cargo update -p wist-stackcheck-core --manifest-path tools/stackcheck/Cargo.toml`。
+`stackcheck-core`**：已发布为 crates.io 的 `wist-stackcheck-core`；本仓只保留
+`tools/stackcheck/src/profile.rs`（center 的路径/变量/挂载对）和 `checks.rs`（center 的
+TLS 策略）。依赖按 `wist-stackcheck-core = "0.1"`（registry）固定。
 
 > 升版本（`gx adm v_patch` / `v_feat`）只会改 `version.txt` 与带 marker 的 `Cargo.toml`，**不动 `Cargo.lock`**：
 > 记得补一次 `cargo update -p wist-center-stackcheck --manifest-path tools/stackcheck/Cargo.toml`，
