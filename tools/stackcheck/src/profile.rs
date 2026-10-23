@@ -7,8 +7,6 @@ pub use wist_stackcheck_core::profile::{
     RenderPair, SecretFile,
 };
 
-pub const PLACEHOLDER_PATTERNS: &[&str] = wist_stackcheck_core::profile::PLACEHOLDER_PATTERNS;
-
 pub const CENTER: Profile = Profile {
     project_fallback: "wist-center-stack",
 
@@ -47,7 +45,7 @@ pub const CENTER: Profile = Profile {
         // 作为最终回落值：不能按「占位值」扫它（真值在旁边的 `.env`，由 layout.public_url 判）。
         "identity/center/.env",
     ],
-    placeholder_patterns: PLACEHOLDER_PATTERNS,
+    placeholder_patterns: wist_stackcheck_core::profile::PLACEHOLDER_PATTERNS,
 
     domains: &[
         DomainSpec {

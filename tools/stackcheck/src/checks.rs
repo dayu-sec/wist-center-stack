@@ -58,10 +58,7 @@ pub fn tls_certificate(stack: &Stack, vars: &Vars, profile: &Profile) -> Vec<Fin
             Finding::fail(
                 CODE,
                 "中心服务器叶证书不在有效期内",
-                format!(
-                    "notBefore={} notAfter={}",
-                    leaf.not_before, leaf.not_after
-                ),
+                format!("notBefore={} notAfter={}", leaf.not_before, leaf.not_after),
             )
             .with_hint("重新签发：`gops sys localize`（ensure-center-server-cert.sh 会重签）"),
         ];
@@ -135,11 +132,11 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::Status;
+    use crate::profile;
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
     use std::time::SystemTime;
-    use crate::Status;
-    use crate::profile;
 
     /// 临时栈根；`Drop` 时清理。
     struct Tree {
@@ -707,7 +704,13 @@ services:
         tree.mkdir(".env");
         let vars = vars(&tree);
         assert!(!vars.ok(), "读不了 .env 不能回落默认值");
-        let findings = crate::run_with(&tree.stack(), &crate::Options { offline: true, only: None });
+        let findings = crate::run_with(
+            &tree.stack(),
+            &crate::Options {
+                offline: true,
+                only: None,
+            },
+        );
         assert!(
             findings
                 .iter()
@@ -773,7 +776,13 @@ services:
     fn run_with_broken_vars_reports_one_config_vars_and_no_duplicate_codes() {
         let tree = Tree::new("run-broken-vars");
         tree.write("sys/merged_vars.yml", "variables:\n  WEB_WGC_DOMAIN: x\n");
-        let findings = crate::run_with(&tree.stack(), &crate::Options { offline: true, only: None });
+        let findings = crate::run_with(
+            &tree.stack(),
+            &crate::Options {
+                offline: true,
+                only: None,
+            },
+        );
         let vars_findings: Vec<_> = findings
             .iter()
             .filter(|finding| finding.code == "config.vars")
@@ -1297,7 +1306,13 @@ services:
         }
         tree.write("sys/db/initdb/01_schema.sql", "CREATE TABLE t (id int);\n");
 
-        let findings = crate::run_with(&tree.stack(), &crate::Options { offline: true, only: None });
+        let findings = crate::run_with(
+            &tree.stack(),
+            &crate::Options {
+                offline: true,
+                only: None,
+            },
+        );
         let bad: Vec<_> = findings
             .iter()
             .filter(|finding| finding.status != Status::Ok)
