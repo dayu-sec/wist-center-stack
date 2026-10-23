@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 # 本地开发用 path；发布前切成共享仓的 git rev/tag（见 README）。
+# 首次发布前用 git tag v0.1.0；crates.io 发布后切成：wist-stackcheck-core = "0.1"
 wist-stackcheck-core = { git = "https://github.com/dayu-sec/wist-stack-tools.git", tag = "v0.1.0" }
 
 [profile.release]
