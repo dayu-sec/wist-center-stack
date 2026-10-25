@@ -3,6 +3,21 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.5.1-alpha] - 2026-10-25
+
+### 变更
+
+- **中心后端跟版 `v0.22.0-alpha`**：网关可以绑定客户（业务身份），绑定状态（已下发 / 已生效 /
+  漂移 / 失败）可见，并支持换绑审计；中心启动时自动补建相关表。
+- **管理前端跟版 `v0.13.0-alpha`**：详情页展示当前绑定与换绑审计，漂移时有明确告警；
+  绑定失败不再被当成成功。
+
+### 升级注意
+
+- 绑定能力需要 `wist-gwlinkd ≥ 0.17.0-alpha` 才能落到数据面；旧版会明确拒绝，页面显示未生效。
+- 中心库会自动补表（`gateway_customer_bindings` / `gateway_binding_audit`）；若生产库不给应用 DDL 权限，
+  请手工执行包内 `docker/initdb/01_schema.sql`。
+
 ## [Unreleased]
 
 ### 新增
