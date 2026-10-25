@@ -10,7 +10,7 @@ system:
 - name: CENTER_IMAGE_TAG
   value: v0.22.0-alpha
 - name: CENTER_WEB_IMAGE_TAG
-  value: v0.13.0-alpha
+  value: v0.13.1-alpha
 - name: VM_IMAGE_TAG
   value: v1.154.0
 - name: GIT_PROXY_IMAGE_TAG
