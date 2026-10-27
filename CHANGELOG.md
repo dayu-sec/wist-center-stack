@@ -3,6 +3,33 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.5.6-alpha] - 2026-10-28
+
+### 变更
+
+- **中心后端跟版 `v0.23.0-alpha`**：从远程下载安装包不再挂在一次请求里 —— 发布端点只落一条
+  持久化任务，worker 串行执行「取包 → 核对 sha256 → 镜像 → 落库」，带 `Prefer: respond-async`
+  直接回 `202`。新增通用任务读面（`GET /api/v1/admin/jobs`）、仅排队中可取消、终态任务按
+  `WIST_CENTER_JOB_RETENTION_DAYS`（默认 7 天）清理。中心重启时残留的「执行中」任务会自动
+  排回队列。`/releases/*` 与 `/release-jobs/*` 的路径与回执形状不变。
+- **管理前端跟版 `v0.20.0-alpha`**：
+  - 新增「任务队列」页（`/jobs`）：能看到中心在忙什么、进度、失败原因，**排队中可取消**，
+    有在飞任务时自动刷新。以前只在录入页按组件看得到下载任务。
+  - 发布目标可以**逐台勾选**（升级安装 / Agent 包 / 知识库）：默认全选在线，可取消 / 加回，
+    **选中的范围就是灰度切分的范围**（目标 0 台时禁止提交）。
+- **`sys/db/initdb/01_schema.sql` 同步到中心 0.23.0**：补上之前落下的
+  `gwlinkd_version`、`gateway_customer_bindings`、`gateway_binding_audit`，以及本次的 `jobs` 表
+  （含 `subject` 列、认领 / 清理 / 主体索引与历史行回填）。
+
+### 升级注意
+
+- 两个镜像都换：`CENTER_IMAGE_TAG=v0.23.0-alpha`、`CENTER_WEB_IMAGE_TAG=v0.20.0-alpha`，
+  然后 `gops run start`。
+- 中心启动时会自己对库做一次幂等迁移（建表 / 补列 / 回填 `subject`）；**生产库若不给应用
+  DDL 权限**，请先按 `sys/db/initdb/01_schema.sql` 手工跑一遍，否则 `jobs` 表不存在时
+  发布与任务队列会直接报错。
+- 任务保留期是环境变量：默认 7 天；`0` 或负数表示不清理（脏值也按不清理，不会回退默认）。
+
 ## [0.5.5-alpha] - 2026-10-27
 
 ### 变更

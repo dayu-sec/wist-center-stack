@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS gateways (
   version TEXT,
   gops_version TEXT,
   gx_version TEXT,
+  gwlinkd_version TEXT,
   status TEXT,
   health TEXT,
   memory_bytes BIGINT,
@@ -48,9 +49,46 @@ ALTER TABLE gateways ADD COLUMN IF NOT EXISTS public_base_url TEXT;
 ALTER TABLE gateways ADD COLUMN IF NOT EXISTS gops_version TEXT;
 ALTER TABLE gateways ADD COLUMN IF NOT EXISTS gx_version TEXT;
 
+-- 幂等补列（既有库）：gwlinkd（宿主侧常驻）**自身**版本（网关容器版本在上面 `version`）。
+-- 老 gwlinkd 不带这个键 → 保持 NULL（页面显示「—」）。
+ALTER TABLE gateways ADD COLUMN IF NOT EXISTS gwlinkd_version TEXT;
+
 -- 幂等补列（既有库）：归档时刻（NULL = 未归档）。归档是**标记**：默认视图不再显示这台网关，
 -- 状态/历史全留；只归档离线网关，重新上线（换证注册或重新上报 online）时自动清空。
 ALTER TABLE gateways ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+
+-- 网关-客户绑定（映射模型 GatewayCustomerBinding）：
+--   customer_id 是**权威值**；revision 在换绑时递增；applied_* 由网关状态上报回填。
+CREATE TABLE IF NOT EXISTS gateway_customer_bindings (
+  gateway_id TEXT PRIMARY KEY,
+  customer_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'bound',
+  bound_at TIMESTAMPTZ NOT NULL,
+  revision BIGINT NOT NULL DEFAULT 1,
+  applied_revision BIGINT,
+  applied_at TIMESTAMPTZ,
+  reported_tenant_id TEXT,
+  last_error TEXT
+);
+
+-- 幂等补列（既有库；老版本可能只建了前四列，甚至整张表都没建）。
+ALTER TABLE gateway_customer_bindings ADD COLUMN IF NOT EXISTS revision BIGINT NOT NULL DEFAULT 1;
+ALTER TABLE gateway_customer_bindings ADD COLUMN IF NOT EXISTS applied_revision BIGINT;
+ALTER TABLE gateway_customer_bindings ADD COLUMN IF NOT EXISTS applied_at TIMESTAMPTZ;
+ALTER TABLE gateway_customer_bindings ADD COLUMN IF NOT EXISTS reported_tenant_id TEXT;
+ALTER TABLE gateway_customer_bindings ADD COLUMN IF NOT EXISTS last_error TEXT;
+
+-- 换绑审计（append-only）：绑定表只保留最新值，历史在这里（管理面展示 + 追责）。
+CREATE TABLE IF NOT EXISTS gateway_binding_audit (
+  id BIGSERIAL PRIMARY KEY,
+  gateway_id TEXT NOT NULL,
+  customer_id TEXT NOT NULL,
+  previous_customer_id TEXT,
+  revision BIGINT NOT NULL DEFAULT 1,
+  requested_by TEXT NOT NULL DEFAULT '',
+  at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_binding_audit_gateway ON gateway_binding_audit (gateway_id);
 
 -- 网关注册 Token（映射模型 GatewayEnrollmentToken）：只存 hash，限量/状态/有效期，
 -- 携带环境绑定与控制中心信任根。
@@ -121,10 +159,47 @@ CREATE TABLE IF NOT EXISTS upgrade_plans (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 规则发布命令队列（Center wparse-proxy → gwlinkd → 本机 wparse）。
+-- 通用后台任务（中心本地作业：入队 → 串行 worker 执行 → 查询）。
+-- payload 存整条 JobRecord（含业务载荷 / 结果 / 进度 / 失败原因）；
+-- kind / queue / state / priority 单独成列，供认领、过滤与索引。
+CREATE TABLE IF NOT EXISTS jobs (
+  job_id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  queue TEXT NOT NULL,
+  -- 业务主体（如 release 的 component），供通用读面按主体过滤。
+  subject TEXT,
+  state TEXT NOT NULL,
+  priority INT NOT NULL DEFAULT 0,
+  payload JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_claim
+  ON jobs (queue, state, priority DESC, created_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_recent
+  ON jobs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_jobs_subject
+  ON jobs (queue, subject, created_at DESC);
+-- 保留期清理：终态任务按 finished_at 删除。
+CREATE INDEX IF NOT EXISTS idx_jobs_cleanup
+  ON jobs (queue, state, finished_at);
+-- 老库补列（终态时间 / 业务主体）。
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS finished_at TIMESTAMPTZ;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS subject TEXT;
+-- 补列后回填历史终态任务的结束时间。
+UPDATE jobs SET finished_at = (payload->>'finished_at')::timestamptz
+  WHERE finished_at IS NULL AND payload->>'finished_at' IS NOT NULL;
+-- 回填 release 任务的主体（老行没有 subject 列）。
+UPDATE jobs SET subject = payload->'payload'->>'component'
+  WHERE subject IS NULL AND queue = 'release-download'
+    AND payload->'payload'->>'component' IS NOT NULL;
+
+-- 规则发布命令队列（WarpStation → Center wparse-proxy → gwlinkd → 本机 wparse）。
 CREATE TABLE IF NOT EXISTS gateway_commands (
   command_id TEXT PRIMARY KEY,
   gateway_id TEXT NOT NULL,
+  -- 命令类型：`proxy`（wparse 管理面转发，缺省）/ `diagnose`（本机体检）。
+  kind TEXT NOT NULL DEFAULT 'proxy',
   method TEXT NOT NULL,
   path TEXT NOT NULL,
   body TEXT,
@@ -148,6 +223,8 @@ CREATE INDEX IF NOT EXISTS idx_gateway_commands_pending
 ALTER TABLE gateway_commands ADD COLUMN IF NOT EXISTS task_id TEXT;
 ALTER TABLE gateway_commands ADD COLUMN IF NOT EXISTS log_dir TEXT;
 ALTER TABLE gateway_commands ADD COLUMN IF NOT EXISTS log_excerpt TEXT;
+-- 老库补列（0.19.6 新增）：控制类命令 kind（`proxy` / `diagnose`）。
+ALTER TABLE gateway_commands ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'proxy';
 
 -- 每网关的 wparse-proxy Bearer token（只存 sha256；明文只发一次）。
 CREATE TABLE IF NOT EXISTS gateway_wparse_tokens (
