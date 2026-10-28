@@ -17,7 +17,7 @@
 
 | 服务 | 作用 | 端口（宿主:容器） | 镜像来源 |
 |---|---|---|---|
-| `center` | 中心后端（HTTP API；规则发布兼容入口） | `${CENTER_HOST_PORT}:3100`<br>`${WPARSE_PROXY_HOST_PORT}:3101` | `${CENTER_REGISTRY}/wist-center:${CENTER_IMAGE_TAG}` |
+| `center` | 中心后端（HTTP API；规则发布兼容入口） | `${CENTER_API_HOST_PORT}:3100`<br>`${WPARSE_PROXY_HOST_PORT}:3101` | `${CENTER_REGISTRY}/wist-center:${CENTER_IMAGE_TAG}` |
 | `web` | 管理前端入口（nginx：**终止 TLS** + 静态 + `/api` 反代到 center） | `${WEB_HOST_PORT}:443`（**HTTPS**） | `${CENTER_REGISTRY}/wist-center-web:${CENTER_WEB_IMAGE_TAG}` |
 | `postgres` | 中心存储（PgStore） | `${PG_HOST_PORT}:5432` | `${PG_REGISTRY}/postgres:${PG_IMAGE_TAG}` |
 | `victoria-metrics` | 状态历史时序库 | `${VM_HOST_PORT}:8428` | `${VM_REGISTRY}/victoria-metrics:${VM_IMAGE_TAG}` |
@@ -90,6 +90,7 @@ wist-center-stack/
     ensure-center-server-cert.sh  # 服务器证书（叶）SAN 覆盖对外域名（幂等重签，不动 CA）
     init-center-pub.sh      # 现场态**值**（CENTER_PUBLIC_URL）→ identity/center/.env（按缺补齐）
     init-web-conf.sh        # 前端站点配置的渲染值（幂等；域名取 WEB_WGC_DOMAIN）
+    init-git-proxy-conf.sh  # Git Proxy 渲染值（路径白名单 / 上游读凭据 / 客户端证书策略）
     check-stack.sh          # 栈级配置检查薄壳（选本机 triple 的预编译件；开发态回落 cargo run）
     db-init.sh              # 一次性：创建 center_app 角色与库，收紧 CONNECT
   tools/stackcheck/          # 本栈 profile + TLS 策略（通用引擎在 wist-stack-tools/stackcheck-core）
@@ -139,7 +140,7 @@ wist-center-stack/
 | gops | **必须 ≥ 2.9**（`secrets.mode` / `perms.services` 需要；旧版会在解析 `sys-prj.yml` 时失败） | `gops -V` |
 | gx | **≥ 0.14**（`localize` 阶段流程；缺失时 `localize` 只写 `.env`，权限 `--apply` 也不会执行） | `gx -V` |
 | 执行账号 | 普通账号 + **已加入 `docker` 组**；部署目录由它拥有 | `id -nG`（输出里应含 `docker`） |
-| 端口 | 宿主 `${CENTER_HOST_PORT}` / `${WPARSE_PROXY_HOST_PORT}` / `${WEB_HOST_PORT}` / `${PG_HOST_PORT}` / `${VM_HOST_PORT}` / `${GIT_PROXY_HOST_PORT}` | 见 `sys/setting/vars.yml` |
+| 端口 | 宿主 `${CENTER_API_HOST_PORT}` / `${WPARSE_PROXY_HOST_PORT}` / `${WEB_HOST_PORT}` / `${PG_HOST_PORT}` / `${VM_HOST_PORT}` / `${GIT_PROXY_HOST_PORT}` | 见 `sys/setting/vars.yml` |
 
 ### 变量与本地化
 
@@ -170,9 +171,9 @@ gops sys localize
    再**渲染现场态声明** `identity/center/wist-center-pub.toml`（`gx.tpl`，只有 `${VAR}`、可重渲）
    并由 `scripts/init-center-pub.sh` 按缺补齐**现场态值** `identity/center/.env`（永不重渲）；
 3. 渲染 `configs/center/wist-center.toml`（模板在 `sys/configs/center/wist-center.toml.tpl`）；
-4. 备料 Git Proxy：**校验** `.wist/sec-value.yml` 的 `wp_git_pub_token` / `wp_git_pub_user`
-   （缺失或为空直接报错，不生成、不补键）；写 `git-proxy.value.json`，
-   渲染 `configs/git-proxy/nginx.conf`；
+4. 备料 Git Proxy：读 `.wist/sec-value.yml` 的 `wp_git_pub_token` / `wp_git_pub_user`
+   （只读，不生成不补键；center 侧缺 token 会直接报错，Git Proxy 侧缺则降级为「不带上游鉴权头」并告警），
+   由 `scripts/init-git-proxy-conf.sh` 写 `git-proxy.value.json`，再渲染 `configs/git-proxy/nginx.conf`；
 5. 写前端站点配置的渲染值 + 渲染 `configs/web/nginx.conf`（`scripts/init-web-conf.sh` + 模板）；
 6. **宿主属主/权限对齐**（`gops sys perms --apply`，gops ≥ 2.7；见下「权限与运行身份」；非 Linux 自动跳过）——
    必须在 `docker compose up` **之前**：Docker 会把缺失的挂载源目录自行建成 `root:root`，
@@ -257,6 +258,76 @@ CNB 的权限坑（实测）：token 必须带 **`repo-code:r`**（读），作�
 docker compose --project-directory . -f sys/docker-compose.yml \
   up -d --force-recreate git-proxy
 ```
+
+#### Git Proxy 的短路径（`/<repo>` 也能拉）
+
+两个仓库 URL 的**公共上级目录**会被自动补上。以 `cnb.cool/dy-sec/jingang-cust/wist/wp-*` 为例，
+公共上级是 `dy-sec/jingang-cust/wist`，于是下面两种写法等价（`git clone` 都可以）：
+
+```text
+https://<wp-git>:18082/dy-sec/jingang-cust/wist/wp-infra
+https://<wp-git>:18082/wp-infra
+```
+
+- 留空 = 自动推导；`GIT_PROXY_SHORT_PREFIX=off` 关闭；也可以显式写一个前缀
+  （必须**同时**是两个仓库的前缀，否则只告警并关闭别名，不阻断 localize）。
+- **白名单没有变宽**：别名命中后 `rewrite ... last` 回到同一组全路径 location，仍然只放行
+  「两个仓库 × `info/refs` / `git-upload-pack` / `HEAD`」；`/wp-infra/objects/...` 之类仍是 404，
+  仍然没有「带 CNB token 的通用反代」。
+- 网关侧 `WPARSE_PROJECT_MODELS_REPO` / `WPARSE_PROJECT_INFRA_REPO` 可以随之写短地址。
+  **升级顺序：先升 Center（本栈），再改网关侧的值** —— 旧 Center 不认短路径。
+
+#### Git Proxy 的客户端认证（mTLS）
+
+网关的客户端证书由 **CA-G** 签发（`identity/center/gateway-client-ca.pem`），与中心网关面 `:3100`
+是**同一套 per-gateway 身份**（URI SAN = `gateway_id`，有效期约 30 天）；证书与私钥在网关侧
+`identity/gwlinkd/credential.json`。中心侧只挂 CA-G 的**公钥证书**（不挂私钥），行为由一个变量控制：
+
+| `GIT_PROXY_CLIENT_CERT_VERIFY` | 行为 |
+|---|---|
+| `off`（默认） | 只验服务端证书（与旧行为一致） |
+| `optional` | 验链但放行，只把结果记进日志（灰度用） |
+| `on` | 未带证书或验链失败 → 拒绝 |
+
+灰度顺序：`off` → `optional` → `on`。access log 已带 `verify=$ssl_client_verify`
+（`NONE` = 没带证书 / `SUCCESS` / `FAILED:...`），`optional` 阶段直接统计覆盖率再切 `on`。
+
+> 日志落在容器内 `/var/log/nginx/access.log`：compose 把 `/var/log/nginx` 挂成 tmpfs，
+> 所以 **`docker logs` 看不到**，要这样读：
+> ```bash
+> docker exec wist-center-stack-git-proxy cat /var/log/nginx/access.log | tail
+> ```
+
+> 换 `off → optional/on` 不需要重建容器以外的动作；但 `configs/git-proxy/nginx.conf` 是 bind mount，
+> 同上面的 `--force-recreate git-proxy`。
+>
+> 尚未做：**撤销**（删掉一台网关后，它手里的证书最长还能用 30 天）—— 需要 `ssl_crl`
+> 或更短有效期；见仓根 `TODO.md` P1。
+
+#### 双 IP（可选）：让 Git Proxy 用 443、网关侧地址不带端口
+
+一个 IP 的一个端口只能有一个监听者。所以「不用端口」靠的不是新域名，而是**第二个 IP**：
+
+| 变量 | 主 IP（现状） | 双 IP（可选） |
+|---|---|---|
+| `CENTER_API_BIND_IP` | `0.0.0.0` | 主私网 IP，如 `10.168.0.149` |
+| `CENTER_API_HOST_PORT` | `3100`（alpha 为 `443`） | `443` |
+| `GIT_PROXY_BIND_IP` | `0.0.0.0` | 第二/辅助私网 IP，如 `10.168.0.150` |
+| `GIT_PROXY_HOST_PORT` | `18082` | `443` |
+| `GIT_PROXY_DOMAIN` | 留空（= `API_WGC_DOMAIN`） | `wp-git.<zone>` |
+
+就是这四个**既有**变量，没有为双 IP 另造新名字。三个要点：
+
+1. **绑私网 IP，不绑公网 IP**：云上公网 IP（EIP）是 NAT，不在网卡上；绑它会报
+   `bind: cannot assign requested address`；
+2. **两个 `*_BIND_IP` 必须不同且不能是 `0.0.0.0`**，否则 443 会冲突。`scripts/init-git-proxy-conf.sh`
+   在 `localize` 阶段就会拦住并打印两种出路（不用等到 `compose up` 的 `EADDRINUSE`）；
+3. **证书与网关侧要同步**：新域名要进 `EXTRA_SANS` 重签叶证书（CA 不动），
+   且 `WPARSE_PROJECT_MODELS_REPO` / `WPARSE_PROJECT_INFRA_REPO` 要改成不带端口的地址。
+
+> 叶证书 SAN 变化会**重新生成私钥**（`scripts/ensure-center-server-cert.sh`），
+> 而 center / web / git-proxy 挂的是同一个证书文件 —— 三个容器要一起重启。
+> 完整步骤与本阶段的取舍见仓根 `TODO.md` P1。
 
 ### 前置：挂载文件
 
@@ -379,7 +450,7 @@ TLS 策略）。依赖按 `wist-stackcheck-core = "0.1"`（registry）固定。
 ### 起来之后
 
 - 管理页面：`https://<WEB_WGC_DOMAIN>:${WEB_HOST_PORT}`（如 `https://wgc.dev.wist.lab:2443`；用站点 CA `identity/center/control-center.pem` 校验）
-- 中心 API：`https://<host>:${CENTER_HOST_PORT}`（compose 配了服务器证书 → 中心本身就是 **HTTPS**；
+- 中心 API：`https://<host>:${CENTER_API_HOST_PORT}`（compose 配了服务器证书 → 中心本身就是 **HTTPS**；
   网关侧走 mTLS，浏览器/脚本可用 `-k` 或带站点 CA 校验证书）
 - 管理 token：见上「密钥」里的 `center_admin_token`
 - 起停与排查：
@@ -410,7 +481,7 @@ gops prj upgrade <sys> <version>  # 端口空着时重跑一次，把版本落�
 gops run status
 ```
 
-`CENTER_HOST_PORT` / `WEB_HOST_PORT` 的**默认值（3100 / 2443）刻意避开了网关栈的 443 / 8443**；
+`CENTER_API_HOST_PORT` / `WEB_HOST_PORT` 的**默认值（3100 / 2443）刻意避开了网关栈的 443 / 8443**；
 现场把它们改成 443 / 8443 后就**不能与网关栈同机同时运行**（端口冲突，与容器名无关：
 本栈容器名是 `wist-center-stack-*`，网关栈是 `wist-gateway-stack-*`）。
 

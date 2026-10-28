@@ -3,6 +3,38 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.6.0-alpha] - 2026-10-28
+
+### 新增
+
+- **Git Proxy 支持双向证书（mTLS）**：`GIT_PROXY_CLIENT_CERT_VERIFY=off|optional|on`（默认 `off`）。
+  网关的客户端证书直接复用 CA-G（与中心网关面同一套 per-gateway 身份），中心侧只挂 CA-G 的
+  **公钥证书**；access log 新增 `verify=`，建议先 `optional` 观测覆盖率再切 `on`。
+  注：网关侧要让 wparse 把证书交出去需上游支持（wp-labs/warp-parse#371），在此之前停在
+  `optional` 是安全的（不拦流量）。
+- **Git Proxy 可用独立域名**：`GIT_PROXY_DOMAIN`（默认空 = 沿用 `API_WGC_DOMAIN`），并**自动加入
+  服务器证书 SAN** —— 网关可改用 `https://wp-git.<zone>/...` 拉取；配合主机第二个 IP 与 443
+  即可去掉端口（证书复用同一张叶，CA 不动，网关无需重入网）。
+- **Git Proxy 短路径**：`GIT_PROXY_SHORT_PREFIX`（留空 = 自动取两个仓库 URL 的公共上级目录，
+  `off` 关闭）让 `https://<wp-git>:<端口>/wp-infra` 等价于长路径。
+  别名命中后 `rewrite ... last` 回到同一组全路径白名单 —— 端点限制 / 限流 / 上游凭据只有一份，
+  白名单没有变宽（仍不是通用反代）。
+  网关侧改用短地址的顺序：**先升 Center，再改 `WPARSE_PROJECT_*_REPO`**。
+- **dev 也能起 Git Proxy**：`./dev/svc.sh start proxy`，复用发布态已渲染好的 `nginx.conf` 与站点证书。
+- **补齐缺失的渲染脚本** `scripts/init-git-proxy-conf.sh`：此前 `git-proxy.value.json` 没有生成者
+  （README 说“由脚本写入”但仓里没有），**全新的现场会在渲染阶段失败**。
+
+### 变更（**破坏性**：需改现场 values）
+
+- **两个变量改名**：`CENTER_BIND_IP` → **`CENTER_API_BIND_IP`**、`CENTER_HOST_PORT` →
+  **`CENTER_API_HOST_PORT`**。center 有两个 listener（网关面 API / 管理面），旧名看不出是哪一面；
+  改名后与既有的 `CENTER_ADMIN_BIND_IP` / `CENTER_ADMIN_HOST_PORT` 成对。
+  - **升级必做**：把 `values/<系统名>/sys_value.yml` 里的旧键改名。
+    **gops 对 values 里的未知键不报错**（只进 `.env`），不改会被静默忽略 →
+    `BIND_IP` 回落到 `0.0.0.0`（扩大暴露面）、`HOST_PORT` 回落到 `3100`（alpha 上网关连不上中心）。
+  - **已加守卫**：`scripts/check-stack.sh` 发现旧键仍在环境里 → 退出码 2（FAIL），
+    localize 末尾的 `--gate` 会阻断启动并打印改名指引。
+
 ## [0.5.6-alpha] - 2026-10-28
 
 ### 变更

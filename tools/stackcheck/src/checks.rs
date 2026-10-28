@@ -188,7 +188,7 @@ mod tests {
   value: center.dev.wist.lab
 - name: API_WGC_DOMAIN
   value: api.dev.wist.lab
-- name: CENTER_HOST_PORT
+- name: CENTER_API_HOST_PORT
   value: '3100'
 - name: CENTER_CONFIG_DIR
   value: ./configs/center
@@ -578,8 +578,8 @@ services:
     #[test]
     fn parses_center_ports_with_bind_ip() {
         let vars = BTreeMap::from([
-            ("CENTER_BIND_IP".to_string(), "0.0.0.0".to_string()),
-            ("CENTER_HOST_PORT".to_string(), "3100".to_string()),
+            ("CENTER_API_BIND_IP".to_string(), "0.0.0.0".to_string()),
+            ("CENTER_API_HOST_PORT".to_string(), "3100".to_string()),
             ("WEB_BIND_IP".to_string(), "127.0.0.1".to_string()),
             ("WEB_HOST_PORT".to_string(), "2443".to_string()),
         ]);
@@ -587,7 +587,7 @@ services:
 services:
   center:
     ports:
-      - \"${CENTER_BIND_IP}:${CENTER_HOST_PORT}:3100\"
+      - \"${CENTER_API_BIND_IP}:${CENTER_API_HOST_PORT}:3100\"
   web:
     ports:
       - \"${WEB_BIND_IP}:${WEB_HOST_PORT}:443\"
@@ -1198,7 +1198,7 @@ services:
         let tree = Tree::new("public-url-443");
         tree.write(
             "sys/merged_vars.yml",
-            "- name: WEB_WGC_DOMAIN\n  value: center.test\n- name: API_WGC_DOMAIN\n  value: api.test\n- name: CENTER_HOST_PORT\n  value: '443'\n",
+            "- name: WEB_WGC_DOMAIN\n  value: center.test\n- name: API_WGC_DOMAIN\n  value: api.test\n- name: CENTER_API_HOST_PORT\n  value: '443'\n",
         );
         tree.write("configs/center/wist-center.toml", "[server]\n");
         tree.write(
@@ -1220,7 +1220,7 @@ services:
             ".env",
             "WEB_WGC_DOMAIN=center.test\n\
              API_WGC_DOMAIN=api.test\n\
-             CENTER_HOST_PORT=3100\n\
+             CENTER_API_HOST_PORT=3100\n\
              CENTER_CONFIG_DIR=./configs/center\n\
              CENTER_ARTIFACT_DIR=./artifacts\n\
              GIT_PROXY_CONFIG_DIR=./configs/git-proxy\n\

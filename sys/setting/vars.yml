@@ -58,13 +58,13 @@ system:
   # 宿主端口（容器内端口是应用契约，写在 compose 里）。
   #
   # **面分离**（公网 / 内网）——`*_BIND_IP` 控制“绑哪张网卡”：
-  #   · **公网只开两个**：`CENTER_HOST_PORT`（网关面 `/api/v1/gateway/**`，mTLS）
+  #   · **公网只开两个**：`CENTER_API_HOST_PORT`（网关面 `/api/v1/gateway/**`，mTLS）
   #     与 `GIT_PROXY_HOST_PORT`（Gateway 拉 CNB 仓库）；
   #   · 其余全部绑 `127.0.0.1`：管理面、Web UI、PG、VM。
   #   内网开放时把对应的 `*_BIND_IP` 改成内网网卡 IP；**不要**把管理面/数据库改成 0.0.0.0。
-  - name: CENTER_BIND_IP
+  - name: CENTER_API_BIND_IP
     value: 0.0.0.0        # 网关面：对外
-  - name: CENTER_HOST_PORT
+  - name: CENTER_API_HOST_PORT
     value: 3100
   # 管理面：**独立 listener**（只挂 `/api/v1/admin/**` + `/api/v1/version`）。
   # 浏览器经 web 容器的 nginx 反代访问，宿主机默认只绑回环。
@@ -87,11 +87,33 @@ system:
   - name: VM_HOST_PORT
     value: 28429
   # Center Git Proxy：Gateway 的 wparse 从这里拉取 CNB 仓库。
-  # **必须对 Gateway 主机可达** → 属于公网面（与 CENTER_HOST_PORT 同级）。
+  # **必须对 Gateway 主机可达** → 属于公网面（与 CENTER_API_HOST_PORT 同级）。
+  #
+  # 双 IP（可选）：让 Git Proxy 也能用 443、而网关侧地址不带端口 ——
+  # 靠的就是这两个变量的**一对**，不需要新变量：
+  #   CENTER_API_BIND_IP    = 主私网 IP（如 10.168.0.149），CENTER_API_HOST_PORT    = 443
+  #   GIT_PROXY_BIND_IP = 第二/辅助私网 IP（如 10.168.0.150），GIT_PROXY_HOST_PORT = 443
+  # 要点：
+  #   · 云上公网 IP 是 NAT → 绑**私网** IP；绑 EIP 会 `bind: cannot assign requested address`；
+  #   · 两端口相同时，两个 BIND_IP 必須**不同且不能是 0.0.0.0**，否则 EADDRINUSE；
+  #     localize 里的 init-git-proxy-conf.sh 会提前拦住并给出两种出路；
+  #   · 换 IP/域名后网关侧要同步改 `WPARSE_PROJECT_*_REPO`（见仓根 TODO.md P1）。
   - name: GIT_PROXY_BIND_IP
     value: 0.0.0.0
   - name: GIT_PROXY_HOST_PORT
     value: 18082
+  # Git Proxy 的**对外域名**（Gateway 侧看到的地址；也是服务器证书 SAN 要覆盖的名字）。
+  # 留空 = 沿用 `API_WGC_DOMAIN`（过渡态：`https://<API_WGC_DOMAIN>:<GIT_PROXY_HOST_PORT>/<repo>`）。
+  # 定成 `wp-git.<zone>` + 主机第二公网 IP 的 443 之后，网关侧地址就不带端口了（见仓根 TODO.md P1）。
+  - name: GIT_PROXY_DOMAIN
+    value: ''
+  # 双向证书（mTLS）：名字/取值与 nginx `ssl_verify_client` 一一对应（不额外发明一套枚举）：
+  #   off      默认，只验服务端证书（与旧行为一致）
+  #   optional 灰度：验链但放行，只把结果记进日志（`verify=$ssl_client_verify`）
+  #   on       强制：客户端必须持 CA-G（identity/center/gateway-client-ca.pem）签发的证书
+  # 客户端证书与中心网关面（:3100）是**同一套 per-gateway 身份**（URI SAN = gateway_id）。
+  - name: GIT_PROXY_CLIENT_CERT_VERIFY
+    value: off
   # Center wparse-proxy：wparse 管理面的兼容入口（**管理面，内网**）。
   # 同栈调用方走 docker 网络，不需要宿主端口；远程调用方请绑内网 NIC。
   - name: WPARSE_PROXY_BIND_IP
@@ -149,8 +171,16 @@ system:
   - name: GIT_PROXY_ALLOW_CIDR
     value: ''
 
+  # 短路径别名：Git Proxy 自动补上的上游目录前缀，Gateway 侧就能只写 `/wp-infra`。
+  #   留空 = 自动取两个仓库 URL 的**公共上级目录**（`.../dy-sec/jingang-cust/wist/wp-*`
+  #   → `dy-sec/jingang-cust/wist`）；`off` = 不生成别名（只认完整路径）；
+  #   也可显式写一个前缀（必须同时是两个仓库的前缀）。
+  - name: GIT_PROXY_SHORT_PREFIX
+    value: ''
+
   # Gateway 侧 wparse 的 Git 拉取基址（写进网关对接片段）。
-  # **Gateway 主机视角**：留空 = 自动取 `https://${API_WGC_DOMAIN}:${GIT_PROXY_HOST_PORT}`；
+  # **Gateway 主机视角**：留空 = 自动取 `https://<GIT_PROXY_DOMAIN 或 API_WGC_DOMAIN>:<GIT_PROXY_HOST_PORT>`；
+  # 端口为 443 时网关侧应写成不带端口的 `https://<GIT_PROXY_DOMAIN>`。
   # 如果 Gateway 走另一条网络/域名访问 Center，再在 values/ 里显式覆盖。
   - name: GIT_PROXY_PUBLIC_BASE
     value: ''

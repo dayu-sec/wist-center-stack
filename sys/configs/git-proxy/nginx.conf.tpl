@@ -5,10 +5,15 @@
 # 渲染值: configs/git-proxy/git-proxy.value.json（本栈 localize 流程生成，600）
 #
 # 安全边界（设计文档 §5.2.1）：
-#   · **只允许**两个仓库的 smart HTTP 读端点（info/refs、git-upload-pack、HEAD）；
+#   · 只允许**两个仓库**的 smart HTTP 读端点（info/refs、git-upload-pack、HEAD）；
+#   · 短路径别名（`/<repo>`）只对已配置的仓库生成，命中后 `rewrite ... last` 回到全路径白名单，
+#     不是第二条通路（见 `GIT_PROXY_SHORT_PREFIX`）；
 #   · 绝不写 `location / { proxy_pass ...; }` —— 否则等于把带 CNB token 的通用 SSRF 暴露出去；
 #   · CNB 读 token 只在本容器/本文件里，Gateway 不持有任何 CNB 凭据；
-#   · 可选 GIT_PROXY_ALLOW_CIDR 做 IP allowlist（空 = 放开，TODO：客户端认证）。
+#   · 来源 IP 可选 allowlist（GIT_PROXY_ALLOW_CIDR，空 = 不限）；
+#   · 客户端认证（双向证书）由 GIT_PROXY_CLIENT_CERT_VERIFY 控制：
+#       off（默认，只验服务端）| optional（校验但放行，只记录）| on（强制）；
+#     客户端证书由 CA-G 签发，与中心网关面（:3100）是同一套 per-gateway 身份。
 
 worker_processes auto;
 pid /var/run/nginx.pid;
@@ -22,8 +27,12 @@ http {
     include       /etc/nginx/mime.types;
     default_type  application/octet-stream;
 
-    # 不打印 Authorization（access log 默认格式不含请求头）。
-    access_log /var/log/nginx/access.log;
+    # 认证结果进日志：`optional` 灰度期间靠它统计「多少网关真的带了证书」。
+    #   NONE = 没带证书；SUCCESS = CA-G 链验通过；FAILED:... = 验不过。
+    # 注意：`off` 模式下也会打（恒为 NONE），便于开前置对比；
+    #   格式里**不含请求头**，所以 Authorization 依旧不会进日志。
+    log_format gitproxy '$remote_addr - [$time_local] "$request" $status $body_bytes_sent verify=$ssl_client_verify';
+    access_log /var/log/nginx/access.log gitproxy;
     server_tokens off;
 
     sendfile          on;
@@ -48,6 +57,9 @@ http {
         ssl_protocols       TLSv1.2 TLSv1.3;
         ssl_session_cache   shared:SSL:10m;
         ssl_session_timeout 10m;
+
+        # 双向证书（mTLS）—— 具体开关与指令由 GIT_PROXY_CLIENT_CERT_VERIFY 渲染。
+{{{git_proxy_client_ca}}}
 
         limit_conn gitconn 32;
 
@@ -100,6 +112,14 @@ http {
             proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
             proxy_redirect off;
             proxy_buffering off;
+        }
+
+        # 短路径别名：客户端写 `/<repo>`（可省上游的公共上级目录，如 `/dy-sec/jingang-cust/wist`），
+        # 代理补回真实路径后**重新走一次 location 匹配**（`rewrite ... last`）→ 命中上面的全路径白名单。
+        # 因此白名单 / 端点限制 / 限流 / 上游凭据只有一份，别名不绕过任何一条。
+        # {{{git_proxy_short_note}}}
+        location ~ ^{{{git_proxy_short_regex}}}/(info/refs|git-upload-pack|HEAD)$ {
+            rewrite {{{git_proxy_short_rewrite}}}
         }
 
         # 其它路径一律拒绝：不做“带 CNB token 的通用反代”。

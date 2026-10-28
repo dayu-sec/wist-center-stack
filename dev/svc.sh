@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # 开发态统一入口：把本地「起 / 停 / 看」收在一处（对齐 wist-gateway-stack 的 dev/svc.sh）。
 #
-# 组件（不给 = 默认全部：deps center web；也可写 all）：
+# 组件（不给 = 默认全部：deps proxy center web；也可写 all）：
 #   deps    PostgreSQL + VictoriaMetrics（docker，用发布态同一份 compose，只起这两个）
+#   proxy   Git Proxy（docker nginx，:18082）—— 发布 wparse-rules / wparse-infra 必需：
+#           dev 的中心只负责读 tag，网关的 wparse 仍然要从这里拉 wp-rules / wp-infra
 #   center  中心后端（默认 https://center.dev.wist.lab:3100，监听 0.0.0.0:3100；TLS 默认开，WIST_CENTER_TLS=0 关）
 #   web     管理前端（vite dev，/api 反代到中心）
 #
@@ -14,15 +16,19 @@
 #   ./dev/svc.sh token                        打印中心 admin token 与出处
 #
 # 例：
-#   ./dev/svc.sh start                 # 全起（deps + center + web）
+#   ./dev/svc.sh start                 # 全起（deps + proxy + center + web）
 #   ./dev/svc.sh start center web      # 只起中心 + 前端
 #   ./dev/svc.sh start deps            # 只起依赖（PG/VM）
+#   ./dev/svc.sh start proxy           # 只起 Git Proxy（没有它规则发布必报 fetch remote tags failed）
 #   ./dev/svc.sh start center --no-build
 #   ./dev/svc.sh restart center        # 改了中心配置/代码后重启中心
 #   ./dev/svc.sh stop                  # 停全部
 #
 # 同一口径：start 后台常驻（不随本脚本退出/关终端而停）；已在跑则复用；停用 stop；重启用 restart（= 停 + 起）。
 # 可覆盖 env：见 lib.sh 头部（WIST_CENTER_TLS / WIST_CENTER_CONFIG / WARP_INSIGHT_CENTER_* …）。
+# 注：deps / proxy 刻意**复用发布态的 docker 容器**（两栈目录同名 → 同一个 compose 项目
+#     `wist-center-stack`），不为 dev 另开一套实例：所以两边共用 postgres / victoria-metrics /
+#     git-proxy 的容器与数据卷（省资源，但**清库即两边都清**）。
 # 注：gwlinkd（网关宿主侧常驻，随网关走）在 gateway-stack/dev —— 由那边的 `./dev/svc.sh start` 带起。
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -67,6 +73,41 @@ start_deps() {
   )
 }
 
+start_proxy() {
+  require_cmd docker
+  (
+    cd "${STACK_ROOT}"
+    if [[ ! -f .env ]]; then
+      echo "栈根没有 .env（gops 渲染的变量文件），先跑一次 gops sys localize …"
+      gops sys localize
+    fi
+    # Git Proxy 只吃两份**发布态渲染物**：nginx.conf（放行哪两个仓库 + 注入读 token）
+    # 与站点证书。缺就报错，别在 dev 里另造一套 —— 否则放行路径/token/域名会与网关侧漂移。
+    local missing=0 f
+    for f in \
+      "${STACK_ROOT}/configs/git-proxy/nginx.conf" \
+      "${STACK_ROOT}/identity/center/control-center-server.crt" \
+      "${STACK_ROOT}/identity/center/control-center-server.key" \
+      "${STACK_ROOT}/identity/center/gateway-client-ca.pem"; do
+      [[ -f "${f}" ]] || {
+        echo "缺少 ${f}" >&2
+        missing=1
+      }
+    done
+    [[ "${missing}" == "1" ]] &&
+      die "Git Proxy 需要发布态渲染物（nginx.conf + 站点证书）：发布态先 gops sys localize，证书缺失再跑 scripts/gen-center-ca.sh"
+
+    # 与 gops run 同一调用口径（-f + --project-directory）。
+    docker compose -f sys/docker-compose.yml --project-directory . up -d git-proxy
+    local i
+    for i in {1..40}; do
+      port_open "${GIT_PROXY_PORT}" && break
+      sleep 0.5
+    done
+    docker compose -f sys/docker-compose.yml --project-directory . ps git-proxy
+  )
+}
+
 up_center() {
   if center_ready; then
     echo "wist-center 已在运行（${CENTER_ADDR}），复用。"
@@ -96,6 +137,15 @@ stop_deps() {
   )
 }
 
+stop_proxy() {
+  require_cmd docker
+  (
+    cd "${STACK_ROOT}"
+    # 只 stop 不 down：容器与渲染物都留着，下次 start 直接复用。
+    docker compose -f sys/docker-compose.yml --project-directory . stop git-proxy
+  )
+}
+
 down_center() {
   require_cmd lsof
   stop_service "wist-center" "${CENTER_PID_FILE}" "${CENTER_PORT}" "wist-center"
@@ -110,10 +160,12 @@ down_web() {
 # ── status / token ──────────────────────────────────────────────────────────
 cmd_status() {
   echo "开发态组件状态："
-  local pg vm scheme
+  local pg vm gp scheme
   port_open "${PG_PORT}" && pg=up || pg=down
   port_open "${VM_PORT}" && vm=up || vm=down
+  port_open "${GIT_PROXY_PORT}" && gp=up || gp=down
   printf '  %-8s postgres=%s (:%s) victoria-metrics=%s (:%s)\n' "deps" "${pg}" "${PG_PORT}" "${vm}" "${VM_PORT}"
+  printf '  %-8s git-proxy=%s (:%s)\n' "proxy" "${gp}" "${GIT_PROXY_PORT}"
 
   if center_tls_enabled; then scheme="https"; else scheme="http"; fi
   if port_open "${CENTER_PORT}"; then
@@ -158,14 +210,14 @@ for arg in "$@"; do
   case "${arg}" in
     --no-build) NO_BUILD=1 ;;
     --dry-run) DRY_RUN=1 ;;
-    deps | center | web | all) requested+=("${arg}") ;;
+    deps | proxy | center | web | all) requested+=("${arg}") ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; die "未知参数：${arg}" ;;
   esac
 done
 
 # 组件按固定顺序收集（起点序）；不给 = 默认全部（start / stop 都如此）。
-COMPONENTS=(deps center web)
+COMPONENTS=(deps proxy center web)
 selected=()
 if [[ ${#requested[@]} -eq 0 ]]; then
   selected=("${COMPONENTS[@]}")
@@ -199,6 +251,7 @@ cmd_start_selected() {
     # 子 shell：组件里的 die/exit 只结束子 shell，不掀翻整次 start。
     if ( case "${c}" in
            deps) start_deps ;;
+           proxy) start_proxy ;;
            center) up_center ;;
            web) up_web ;;
          esac ); then
@@ -226,6 +279,7 @@ cmd_stop_selected() {
   for ((i = ${#selected[@]} - 1; i >= 0; i--)); do
     case "${selected[$i]}" in
       deps) stop_deps ;;
+      proxy) stop_proxy ;;
       center) down_center ;;
       web) down_web ;;
     esac

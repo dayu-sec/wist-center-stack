@@ -35,7 +35,11 @@ mod operators {
       dst  : "./configs/center/wist-center.toml",
       file : "./configs/center/wist-center.value.json"
     );
-    //     · 渲染 Git Proxy（路径白名单 + CNB 读凭据；值来自 git-proxy.value.json）。
+    //     · 先备料 Git Proxy 的**渲染值**（路径白名单 / 上游读凭据 / 客户端证书策略）。
+    //       必须走脚本而不是在这里 printf：GXL 不还原 `\"`，Ubuntu 的 /bin/sh 是 dash，
+    //       printf 会把反斜杠写进文件 → 非法 JSON → 下面 gx.tpl 直接 parse 失败。
+    gx.cmd ( "./scripts/init-git-proxy-conf.sh configs/git-proxy" );
+    //     · 渲染 Git Proxy（路径白名单 + CNB 读凭据 + 可选双向证书；值来自 git-proxy.value.json）。
     gx.tpl (
       tpl  : "./sys/configs/git-proxy/nginx.conf.tpl",
       dst  : "./configs/git-proxy/nginx.conf",

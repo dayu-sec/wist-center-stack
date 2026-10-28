@@ -103,6 +103,10 @@ fi
 WEB_URL="${WEB_URL:-http://127.0.0.1:5173}"
 PG_PORT="${PG_HOST_PORT:-${PG_PORT:-55432}}"
 VM_PORT="${VM_HOST_PORT:-${VM_PORT:-28429}}"
+# Git Proxy（nginx）宿主机端口：网关的 wparse 从这里拉 wp-rules / wp-infra 的 tag。
+# 名义上属于发布态，但**发布动作发生在 dev**（dev center 只读 tag，网关仍需从这里拉），
+# 所以 dev 也提供一个 `proxy` 组件，优先复用发布态已经渲染好的 nginx.conf 与站点证书。
+GIT_PROXY_PORT="${GIT_PROXY_HOST_PORT:-${GIT_PROXY_PORT:-18082}}"
 
 # 中心对外协议（http / https）；start_center / start_web 各自按 TLS 开关设定。
 CENTER_SCHEME="http"
@@ -577,10 +581,11 @@ start_web() {
 # 那些全局量出了子 shell 就是空，照它打印会「起了却什么都不显示」。
 print_access_info() {
   local scheme token want
-  local do_center=0 do_web=0
+  local do_center=0 do_web=0 do_proxy=0
   for want in "$@"; do
     [[ "${want}" == "center" ]] && do_center=1
     [[ "${want}" == "web" ]] && do_web=1
+    [[ "${want}" == "proxy" ]] && do_proxy=1
   done
 
   echo
@@ -594,6 +599,15 @@ print_access_info() {
     echo "    （在管理页面填入该 token 后开启 5s 轮询刷新）"
     echo "    换一套凭据：删掉 ${CENTER_SEC_FILE} 后重跑本脚本（旧 token 立即失效）"
     echo "  中心日志：${CENTER_LOG}"
+    # 发布 wparse-rules / wparse-infra 时，网关的 wparse 还是要从 Git Proxy 拉 tag。
+    # 缺它发布必报 `fetch remote tags failed`，这里提前点一下。
+    if ! port_open "${GIT_PROXY_PORT}"; then
+      echo "    ⚠ 规则发布还需要 Git Proxy（:${GIT_PROXY_PORT}）：./dev/svc.sh start proxy"
+    fi
+  fi
+
+  if [[ "${do_proxy}" == "1" ]] && port_open "${GIT_PROXY_PORT}"; then
+    echo "  Git Proxy：:${GIT_PROXY_PORT}（网关 wparse 从这里拉 wp-rules / wp-infra 的 tag）"
   fi
 
   if [[ "${do_web}" == "1" ]] && [[ "$(web_status)" == "200" ]]; then

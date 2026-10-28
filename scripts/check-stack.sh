@@ -17,6 +17,23 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# ── 变量改名守卫 ───────────────────────────────────────────────────────
+# `CENTER_BIND_IP` / `CENTER_HOST_PORT` 已改名为 `CENTER_API_BIND_IP` / `CENTER_API_HOST_PORT`
+# （center 有两个 listener：网关面 API 与管理面；旧名看不出是哪一面，改名后与 `CENTER_ADMIN_*` 对称）。
+#
+# 为什么必须在这里拦：gops 对 values 里的**未知键是静默接受的**（旧键照样进 .env、localize 不报错），
+# 于是「现场还写着旧键」会静默回落到默认值 —— `BIND_IP` 回落到 0.0.0.0 是安全相关的降级，
+# 而 `HOST_PORT` 回落到 3100 会让网关直接连不上中心。所以发现旧键就硬失败（退出码 2 = FAIL），
+# localize 末尾的 `--gate` 会因此阻断启动。
+for legacy in CENTER_BIND_IP CENTER_HOST_PORT; do
+  if [ -n "${!legacy:-}" ]; then
+    echo "错误：${legacy} 已改名为 ${legacy/CENTER_/CENTER_API_}" >&2
+    echo "  请把 values/<系统名>/sys_value.yml 里的旧键改名，再重跑 gops sys localize。" >&2
+    echo "  （gops 不会因为未知键报错；旧键会被静默忽略，绑定回落到默认值）" >&2
+    exit 2
+  fi
+done
+
 case "$(uname -s)-$(uname -m)" in
   Linux-aarch64 | Linux-arm64) triple="aarch64-unknown-linux-musl" ;;
   Linux-x86_64 | Linux-amd64) triple="x86_64-unknown-linux-musl" ;;

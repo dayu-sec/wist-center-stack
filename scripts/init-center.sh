@@ -99,6 +99,22 @@ mkdir -p "${IDENTITY_DIR}" "${CONFIG_DIR}/state" "${CONFIG_DIR}/logs" "${STACK_R
 API_WGC_DOMAIN="${API_WGC_DOMAIN:-api.${DOMAIN}}"
 EXTRA_SANS="${API_WGC_DOMAIN}"
 
+# Git Proxy 的独立域名（可选）：网关拉规则的地址与它共享同一张叶证书，所以必须也进 SAN。
+# 留空 = 沿用 API_WGC_DOMAIN（过渡态地址带端口）。
+GIT_PROXY_DOMAIN="${GIT_PROXY_DOMAIN:-}"
+if [[ -n "${GIT_PROXY_DOMAIN}" ]]; then
+  case "${GIT_PROXY_DOMAIN}" in
+    *[!A-Za-z0-9.-]* | .* | *.)
+      echo "GIT_PROXY_DOMAIN 不合法：'${GIT_PROXY_DOMAIN}'（只允许 [A-Za-z0-9.-]，且不以点开头/结尾）" >&2
+      exit 1
+      ;;
+  esac
+  # 去重：与 DOMAIN / API_WGC_DOMAIN 相同时没有追加的必要。
+  if [[ "${GIT_PROXY_DOMAIN}" != "${DOMAIN}" && "${GIT_PROXY_DOMAIN}" != "${API_WGC_DOMAIN}" ]]; then
+    EXTRA_SANS="${EXTRA_SANS},${GIT_PROXY_DOMAIN}"
+  fi
+fi
+
 # ── 1) 控制中心 CA（信任根 + 服务器证书）：缺失才生成，落站点身份目录 ──
 # control-center.pem 是分发给所有网关的信任根（control_center.trust_bundle）；
 # 换它 = 换公章，已分发的信任根全部失效 → 非缺失一律不碰，轮换要显式 FORCE=1。

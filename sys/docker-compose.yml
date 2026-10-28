@@ -2,7 +2,7 @@
 #
 # 端口约定（宿主:容器；宿主端口与 `*_BIND_IP` 见 sys/setting/vars.yml，现场在 ops-prj 的 `values/<系统名>/sys_value.yml` 覆盖）：
 #   **公网面（只这两个）**
-#   center           ${CENTER_HOST_PORT}:3100       网关面 HTTPS+mTLS（/api/v1/gateway/**）
+#   center           ${CENTER_API_HOST_PORT}:3100       网关面 HTTPS+mTLS（/api/v1/gateway/**）
 #   git-proxy        ${GIT_PROXY_HOST_PORT}:8443     Gateway 拉 CNB 仓库（只读 smart HTTP）
 #   **内网面（默认只绑 127.0.0.1）**
 #   center           ${CENTER_ADMIN_HOST_PORT}:3102 管理面（/api/v1/admin/**；浏览器经 web 反代）
@@ -163,7 +163,7 @@ services:
       #   3100 = 网关面（**公网**，`/api/v1/gateway/**` + `/api/v1/version`，mTLS）
       #   3102 = 管理面（**内网**，`/api/v1/admin/**` + `/api/v1/version`；浏览器经 web 反代）
       #   3101 = 设备面 wparse-proxy（内网；同栈走 docker 网络，宿主端口仅供排障）
-      - "${CENTER_BIND_IP}:${CENTER_HOST_PORT}:3100"
+      - "${CENTER_API_BIND_IP}:${CENTER_API_HOST_PORT}:3100"
       - "${CENTER_ADMIN_BIND_IP}:${CENTER_ADMIN_HOST_PORT}:3102"
       - "${WPARSE_PROXY_BIND_IP}:${WPARSE_PROXY_HOST_PORT}:3101"
     depends_on:
@@ -187,8 +187,10 @@ services:
 
   # CNB 只读 Git 反代（nginx）。
   # 路径白名单只在 nginx.conf.tpl 里维护；nginx.conf 由 localize 渲染（600，含 CNB 读凭据）。
-  # 复用中心服务器证书；Gateway 用 Center CA 校验。客户端认证本期放开（TODO），
-  # 可选 GIT_PROXY_ALLOW_CIDR 做 IP allowlist。
+  # 复用中心服务器证书；Gateway 用 Center CA 校验。
+  # 双向证书由 GIT_PROXY_CLIENT_CERT_VERIFY 控制（off | optional | on），
+  # 客户端证书由 CA-G 验链 —— 故只挂 CA-G 的**公钥证书**（不挂私钥）。
+  # 可选 GIT_PROXY_ALLOW_CIDR 做来源 IP allowlist。
   git-proxy:
     container_name: wist-center-stack-git-proxy
     image: ${GIT_PROXY_REGISTRY}/nginx:${GIT_PROXY_IMAGE_TAG}
@@ -198,6 +200,10 @@ services:
       - ${GIT_PROXY_CONFIG_DIR}/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./identity/center/control-center-server.crt:/certs/server.crt:ro
       - ./identity/center/control-center-server.key:/certs/server.key:ro
+      # 网关客户端 CA（CA-G）的**证书**：`ssl_client_certificate` 用它验客户端链。
+      # 由 scripts/init-center.sh 幂等备齐（缺失即生成），所以文件一定存在；
+      # 不能挂整个 identity/center 目录 —— 里面还有 CA 私钥。
+      - ./identity/center/gateway-client-ca.pem:/certs/gateway-client-ca.pem:ro
     tmpfs:
       - /var/cache/nginx:rw,noexec,nosuid,size=16m
       - /var/run:rw,noexec,nosuid,size=1m

@@ -6,7 +6,7 @@
 # （`sys/configs/center/wist-center-pub.toml.tpl` → `identity/center/wist-center-pub.toml`），
 # 与其它交付物同一套渲染；重渲动不到现场（值不在这里）。
 #
-# 本脚本只做一件事：把 `CENTER_PUBLIC_URL`（= `https://<API_WGC_DOMAIN>:<CENTER_HOST_PORT>`，
+# 本脚本只做一件事：把 `CENTER_PUBLIC_URL`（= `https://<API_WGC_DOMAIN>:<CENTER_API_HOST_PORT>`，
 # 端口为 443 时省略）按缺（**键不存在或值为空**）写进 `.env`，**非空一律保留**（现场改过 / 迁移搬来的）。
 #
 # 为什么值与声明分开（docker-compose 口径）：声明里只出现 `${VAR}`，真值在 `.env` ——
@@ -21,7 +21,7 @@
 # 读合并后的系统变量（gops 以环境变量注入本子进程；见 sys/setting/vars.yml）：
 #   WEB_WGC_DOMAIN   管理面 / Web 域名
 #   API_WGC_DOMAIN 网关面域名（留空 = api.<WEB_WGC_DOMAIN>）；public_url 用它
-#   CENTER_HOST_PORT     中心后端**宿主**端口（默认 3100）→ `CENTER_PUBLIC_URL = https://<域>:<CENTER_HOST_PORT>`
+#   CENTER_API_HOST_PORT     中心后端**宿主**端口（默认 3100）→ `CENTER_PUBLIC_URL = https://<域>:<CENTER_API_HOST_PORT>`
 #   端口必须带上：网关按 public_url **直连**中心后端（mTLS；见 docker-compose「网关直连 3100」）；
 #   443 那个口是 web 前端（终止 TLS、不透传客户端证书）。端口为 443 时省略。
 #
@@ -39,7 +39,7 @@ command -v python3 >/dev/null 2>&1 || { echo "缺少 python3，无法生成现�
 mkdir -p "${DIR}"
 
 # 值：按缺补齐（键不存在或值为空才写；非空一律保留）。
-python3 - "${ENV_FILE}" "${PUBLIC_API_URL_DOMAIN}" "${CENTER_HOST_PORT:-3100}" <<'PY'
+python3 - "${ENV_FILE}" "${PUBLIC_API_URL_DOMAIN}" "${CENTER_API_HOST_PORT:-3100}" <<'PY'
 import os, sys, tempfile
 
 target, domain, port = sys.argv[1:4]

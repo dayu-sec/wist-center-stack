@@ -210,7 +210,7 @@ pub const CENTER: Profile = Profile {
         declaration: "identity/center/wist-center-pub.toml",
         env: "identity/center/.env",
         env_var: "CENTER_PUBLIC_URL",
-        port_var: "CENTER_HOST_PORT",
+        port_var: "CENTER_API_HOST_PORT",
         default_port: "3100",
         host_var: "API_WGC_DOMAIN",
     }),

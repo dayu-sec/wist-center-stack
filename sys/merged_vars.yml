@@ -19,9 +19,9 @@ system:
   value: ghcr.io/dayu-sec/wist-gateway:v0.17.0-alpha
 - name: PG_IMAGE_TAG
   value: '16'
-- name: CENTER_BIND_IP
+- name: CENTER_API_BIND_IP
   value: 0.0.0.0
-- name: CENTER_HOST_PORT
+- name: CENTER_API_HOST_PORT
   value: 3100
 - name: CENTER_ADMIN_BIND_IP
   value: 127.0.0.1
@@ -43,6 +43,10 @@ system:
   value: 0.0.0.0
 - name: GIT_PROXY_HOST_PORT
   value: 18082
+- name: GIT_PROXY_DOMAIN
+  value: ''
+- name: GIT_PROXY_CLIENT_CERT_VERIFY
+  value: off
 - name: WPARSE_PROXY_BIND_IP
   value: 127.0.0.1
 - name: WPARSE_PROXY_HOST_PORT
@@ -74,6 +78,8 @@ system:
 - name: WP_GIT_AUTH_HEADER
   value: Authorization
 - name: GIT_PROXY_ALLOW_CIDR
+  value: ''
+- name: GIT_PROXY_SHORT_PREFIX
   value: ''
 - name: GIT_PROXY_PUBLIC_BASE
   value: ''
