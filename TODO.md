@@ -124,6 +124,12 @@ wp-git.dev.wist.lab :18082  → git-proxy（只读 smart HTTP + 可选双向证�
 - [x] 从 `identity/gwlinkd/credential.json` 投影证书：`scripts/init-wparse-admin.sh` 写
       `data-plane-run/.run/git-client.{crt,key}.host`（0600）；`wparse-run-init` 复制进命名卷
       `/data/.run/git-client.{crt,key}`（0600，属主 wparse）
+- [x] **已随 gateway-stack `0.6.0-alpha` 发布（2026-10-28）**：网关侧只认域名，不认 IP ——
+      `extra_hosts: <域名>:host-gateway`（单机）/ 真实 DNS（多机），values 里不出现 IP、端口。
+      所以换 IP、换 EIP、上第二 IP **都不需要改网关**（一个值管 1000 个网关）。
+      同时加了「`GIT_PROXY_DOMAIN` / `CENTER_API_DOMAIN` vs 实际访问主机名」一致性告警。
+- [x] 顺带改名（**破坏性**）：`CENTER_DOMAIN` → **`CENTER_API_DOMAIN`**（与 center-stack 的
+      `CENTER_API_*` 成对）；旧键仍在而新键为空时 localize 直接失败。
 - [ ] **卡点：wparse 侧还不支持把客户端证书交给 libgit2** —— 见下
 
 #### 卡点：wparse 不支持 git 客户端证书（2026-10-28 实测）
@@ -208,6 +214,7 @@ off  →  optional（只记录 $ssl_client_verify，不拦）→ 观测 100% SUC
 | 同机 SNI / L4 分流占 443 | mTLS 能保住，但后端 peer 变成 `127.0.0.1` → 限流并桶（需 PROXY protocol，center 目前不支持） |
 | 拆独立主机托管 Git Proxy | 只解决端口争用，却新增故障域 + 密钥分发 + 一套运维；在本规模下不划算。**同机第二 IP + 443** 可以零副作用拿到同样效果（见 P1「地址与端口形态」），所以不走这一条 |
 | 用通配符 `*.<zone>` 做证书 | 域名空间固定，通配符无收益；却把私钥可冒充的范围从「几个已知主机名」放大到整个 zone，并阻碍日后拆分主机 |
+| 在网关 values 里写 Git Proxy 的 IP（如 `GIT_PROXY_RESOLVE_IP`） | IP 属于**中心侧拓扑**，写进客户端等于「换 IP / 换 EIP 要改 1000 个网关」，域名带来的好处当场归零。单机用 `host-gateway` 映射、多机用真实 DNS，两种形态都只需要域名 |
 
 ---
 
