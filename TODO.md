@@ -7,6 +7,33 @@
 
 ## P1 · Git Proxy 启用双向证书（mTLS），独立域名 + 第二 IP 的 443
 
+### ⚠ 硬前提（一句结论，先看这条）
+
+**`wp-git.<zone>` 想不带端口，就必须有第二个公网 IP（EIP）。** 这不是可选项：
+
+- 一个 EIP 是 **1:1 NAT 到某一个私网 IP** → 那个 IP 的 443 只能有一个监听者；
+- 两个 listener 要共存，得先有两个**私网** IP（辅助私网 IP/辅助 ENI，免费）；
+- 而公网要到得了第二个私网 IP，就得给它配一个**EIP**（要配额、要计费）。
+
+| 手上有什么 | 结果 |
+|---|---|
+| 1 私网 IP + 1 EIP（默认） | 只有一个 443，center 与 git-proxy 二选一 |
+| 2 私网 IP + 1 EIP | 还是只有一个能从公网进来（辅助 IP 上的 443 无处指） |
+| **2 私网 IP + 2 EIP** | 两个域名各指一个 EIP，都不带端口 ✅ |
+| 2 私网 IP + 0 EIP（网关全走内网） | 内网 DNS 直指两个私网 IP，最省 ✅ |
+
+判断只需一条：`ip -4 -o addr show scope global | awk '{print $2, $4}'`
+（注：轻量应用服务器 Lighthouse **不能**加辅助网卡/EIP，只有 1 个公网 IP 的死局）
+
+拿不到第二个 EIP 时只有三条路，按代价排序：
+
+1. **443 给 git-proxy**，center 留 3100（安全组限源）—— git 仓库 URL 干净，但 `GWLINKD_CENTER_ENDPOINT` 带端口；
+2. **443 给 center**，git-proxy 用 18082 —— 两个 `WPARSE_PROJECT_*_REPO` 带端口；
+3. SNI/L7 分流或拆机 —— 均已在下方「已否决」表内。
+
+> 证书与这条前提**无关**：`GIT_PROXY_DOMAIN` 已进叶证书 SAN（`openssl verify` 已 OK，2027-11-29 到期），
+> 换/加 EIP 不需要重签。
+
 ### 结论（2026-10-28 决策）
 
 Git Proxy **不并入 center 的 443，也不做 path 合流**；公网暴露以**双向证书**为前提。
