@@ -55,12 +55,38 @@ center.<zone>  → 主 EIP   → 主私网 IP（如 10.168.0.149）   → center
   center / web / git-proxy 三个容器挂的是同一个证书文件（`sys/docker-compose.yml:199-200, 226-227`），
   必须**一起滚动重启**，否则会有一段时间某容器用旧 key。
 
+### 公网 IP 与私网 IP 的映射（云上必做，栈里零配置）
+
+三层关系，别再混：
+
+```
+EIP（公网，NAT）  ──映射──>  私网 IP（网卡上真实存在）  <──bind──  容器
+   center.<zone>  A → 主 EIP    → 主私网 IP   → center    :443
+   wp-git.<zone>  A → 第二 EIP  → 辅助私网 IP → git-proxy :443
+```
+
+- **栈里没有任何“公网 IP”变量**：`CENTER_API_BIND_IP` / `GIT_PROXY_BIND_IP` 填的永远是**私网 IP**。
+  把 EIP 写进 compose / values → `bind: cannot assign requested address`（EIP 是 NAT 地址，不在网卡上）。
+- **“要不要映射”取决于网关从哪里来**：
+  - 网关走公网（跨 region / 客户侧）→ **必须**给第二私网 IP 绑 EIP，否则 `wp-git.<zone>` 不可达；
+  - 网关全在内网（同 VPC / 专线 / VPN）→ **不要绑 EIP**，内网 DNS 直接指私网 IP：更省（少一份 EIP 计费）
+    也更安全（公网面少一个 listener）。
+- **EIP 绑到哪个“东西”**：优先**第二块辅助 ENI**，把 EIP 绑它的主私网 IP ——
+  AWS 只允许把 EIP 绑到 ENI 的**主**私网 IP，腾讯云是否能直接绑辅助私网 IP 看实例规格/控制台；
+  加一块辅助网卡是两边都成立的形态，且带宽/可用性独立。
+- **安全组是按网卡生效的**：绑在辅助 ENI 上的 443 用的是**那块 ENI 自己的安全组**，
+  只在主网卡放行 443 会让第二个 listener 永远不通（很难查）。
+- **DNS 两条 A 记录分别指两个 EIP**；不要把同一个域名同时解析到两个 IP（会随机打到错的 listener）。
+- **EIP 是 NAT，不改源 IP**：center / git-proxy 看到的 peer 仍是网关公网 IP，限流、审计、
+  `GIT_PROXY_ALLOW_CIDR` 全部照旧有效（前置代理才会毁这个语义）。
+
 ### 部署前置（必须先核实）
 
 - [ ] 实例规格支持第二个 IP / 第二个 EIP（多 ENI，或「辅助私网 IP + EIP」，以控制台/工单为准）
 - [ ] 辅助私网 IP 已在网卡上：`ip addr show | rg '<辅助私网 IP>'`（不在网卡上，docker 一定绑不上）
+- [ ] 第二 EIP 已绑到该私网 IP（或辅助 ENI 的主私网 IP）；纯内网场景则跳过并确认内网 DNS
 - [ ] DNS：`wp-git.<zone>` → 第二 EIP（可用 `dig +short` 验证）
-- [ ] 安全组放行第二 IP 的 443（腾讯云安全组是实例级，通常已放行）
+- [ ] 安全组：**承载该私网 IP 的那块网卡**放行 443（辅助 ENI 的安全组与主网卡是两套）
 - [ ] EIP 的带宽/计费确认（按 EIP 单独计费）
 
 ### 上线验证
