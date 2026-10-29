@@ -21,6 +21,7 @@
 #   PG_SUPERUSER / PG_SUPERUSER_PASSWORD / PG_DB   中心存储 DSN 的组成（容器网络内服务名 postgres）
 #   VICTORIA_METRICS_URL   时序库地址（容器网络内服务名 victoria-metrics）
 #   GATEWAY_IMAGE          生成网关安装命令用的镜像（写进 [artifacts] gateway_image）
+#   GATEWAY_PRJ_TPL_REPO   网关部署工程模板仓库（写进 [artifacts] gateway_project_repo；安装脚本 clone 它）
 #
 # 幂等：CA 已存在即跳过（换公章会让所有已分发出去的信任根失效，须显式轮换）；
 #       value.json 内容与当前一致即不碰 mtime；密钥文件**只读不写**。
@@ -51,6 +52,8 @@ PG_SUPERUSER_PASSWORD="${PG_SUPERUSER_PASSWORD:-demo}"
 PG_DB="${PG_DB:-insight_demo}"
 VICTORIA_METRICS_URL="${VICTORIA_METRICS_URL:-}"
 GATEWAY_IMAGE="${GATEWAY_IMAGE:-wist-gateway:latest}"
+# 网关部署工程模板仓库：`install-all` 脚本 clone 它来落工程（中心默认值见 wist-center 的 config）。
+GATEWAY_PRJ_TPL_REPO="${GATEWAY_PRJ_TPL_REPO:-https://wgc-git.beta.jingang.cloud/gateway-tx.git}"
 # 规则 / 配置发布入口：两个 repo 都配了才启用（tag 列表 + 发布都要有目标仓库）。
 # 只配一个时保持关闭，避免中心因为 repo 为空起不来；运维补齐后再重新 localize。
 WP_RULES_REPO_URL="${WP_RULES_REPO_URL:-}"
@@ -65,10 +68,10 @@ else
   # 但仍要说一句：否则「发布页没有 ④/⑤」会被当成中心坏了。
   echo "  · 未配置 Git 仓库（WP_RULES_REPO_URL / WP_INFRA_REPO_URL）：wparse_release 关闭（发布页无 ④/⑤）" >&2
 fi
-# 两个 URL 会原样写进 value.json；含引号 / 反斜杠 / 换行会破坏 JSON，提前拒掉。
-case "${WP_RULES_REPO_URL}${WP_INFRA_REPO_URL}" in
+# 这些 URL 会原样写进 value.json；含引号 / 反斜杠 / 换行会破坏 JSON，提前拒掉。
+case "${WP_RULES_REPO_URL}${WP_INFRA_REPO_URL}${GATEWAY_PRJ_TPL_REPO}" in
   *'"'* | *'\'* | *$'\n'* | *$'\r'*)
-    echo "错误：WP_RULES_REPO_URL / WP_INFRA_REPO_URL 含 JSON 非法字符（引号 / 反斜杠 / 换行）" >&2
+    echo "错误：WP_RULES_REPO_URL / WP_INFRA_REPO_URL / GATEWAY_PRJ_TPL_REPO 含 JSON 非法字符（引号 / 反斜杠 / 换行）" >&2
     exit 1
     ;;
 esac
@@ -243,6 +246,7 @@ cat >"${tmp}" <<EOF
   "ca_cert_path": "/wist-center/ca/control-center.pem",
   "artifact_dir": "artifacts",
   "gateway_image": "${GATEWAY_IMAGE}",
+  "gateway_prj_tpl_repo": "${GATEWAY_PRJ_TPL_REPO}",
   "wparse_release_enabled": ${WPARSE_RELEASE_ENABLED},
   "wp_rules_repo": "${WP_RULES_REPO_URL}",
   "wp_infra_repo": "${WP_INFRA_REPO_URL}"

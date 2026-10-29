@@ -59,6 +59,9 @@ ca_cert_path = "{{ca_cert_path}}"
 dir = "{{artifact_dir}}"
 # 生成网关安装命令时使用的镜像名。
 gateway_image = "{{gateway_image}}"
+# 网关部署工程（ops-prj）**模板仓库**：`install-all` 脚本 clone 它来落工程（替代 `gops prj new`）。
+# 现场值来自 vars 的 `GATEWAY_PRJ_TPL_REPO`（可在 ops-prj 的 sys_value.yml 覆盖）。
+gateway_project_repo = "{{gateway_prj_tpl_repo}}"
 # 云对象存储（S3 兼容，可选）：四项齐全才启用，否则用上面的 dir 落本地。
 object_storage_endpoint = ""
 object_storage_bucket = ""

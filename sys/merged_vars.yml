@@ -17,6 +17,8 @@ system:
   value: 1.27-alpine
 - name: GATEWAY_IMAGE
   value: ghcr.io/dayu-sec/wist-gateway:v0.27.0-alpha
+- name: GATEWAY_PRJ_TPL_REPO
+  value: https://wgc-git.beta.jingang.cloud/gateway-tx.git
 - name: PG_IMAGE_TAG
   value: '16'
 - name: CENTER_API_BIND_IP

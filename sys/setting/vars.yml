@@ -51,6 +51,13 @@ system:
   # 现场按实际网关栈镜像覆盖；默认值与 wist-gateway-stack 当前钉的版本对齐。
   - name: GATEWAY_IMAGE
     value: ghcr.io/dayu-sec/wist-gateway:v0.27.0-alpha
+  # 网关部署工程（ops-prj）**模板仓库**：中心生成的 `install-all` 脚本 clone 它来落工程
+  # （替代早先的 `gops prj new`）。工程自带 ops-prj.yml 与 values/wist-gateway-stack/sys_value.yml。
+  # 写进渲染出的 wist-center.toml 的 [artifacts] gateway_project_repo；
+  # 现场换仓库时在 ops-prj 的 values/<系统名>/sys_value.yml 覆盖本项，再 `gops sys localize`。
+  # 需 wist-center ≥ 0.25.0-alpha（旧中心不认该键，仍用内置默认地址）。
+  - name: GATEWAY_PRJ_TPL_REPO
+    value: https://wgc-git.beta.jingang.cloud/gateway-tx.git
   # 中心存储：PostgreSQL（PgStore）。库结构由 sys/db/initdb/01_schema.sql 在**首次**初始化数据卷时建立。
   - name: PG_IMAGE_TAG
     value: '16'
