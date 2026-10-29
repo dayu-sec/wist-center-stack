@@ -36,9 +36,9 @@ system:
   #   CENTER_IMAGE_TAG       wist-center 的 release tag
   #   CENTER_WEB_IMAGE_TAG   wist-center-web 的 release tag
   - name: CENTER_IMAGE_TAG
-    value: v0.23.0-alpha
+    value: v0.24.1-alpha
   - name: CENTER_WEB_IMAGE_TAG
-    value: v0.20.0-alpha
+    value: v0.21.0-alpha
   # 观测镜像 tag（源前缀见 VM_REGISTRY）
   - name: VM_IMAGE_TAG
     value: v1.154.0
@@ -50,7 +50,7 @@ system:
   # 中心生成「网关安装命令」时用的网关镜像（写进渲染出的 wist-center.toml 的 [artifacts] gateway_image）。
   # 现场按实际网关栈镜像覆盖；默认值与 wist-gateway-stack 当前钉的版本对齐。
   - name: GATEWAY_IMAGE
-    value: ghcr.io/dayu-sec/wist-gateway:v0.17.0-alpha
+    value: ghcr.io/dayu-sec/wist-gateway:v0.27.0-alpha
   # 中心存储：PostgreSQL（PgStore）。库结构由 sys/db/initdb/01_schema.sql 在**首次**初始化数据卷时建立。
   - name: PG_IMAGE_TAG
     value: '16'

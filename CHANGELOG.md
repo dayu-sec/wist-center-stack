@@ -3,6 +3,25 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.7.1-alpha] - 2026-10-29
+
+### 变更（组件跟版：兼容性检查与展示）
+
+三个镜像 tag 跟到对应仓库当前发布版（`sys/setting/vars.yml` 改，`gops sys update` 重新生成
+`sys/merged_vars.yml`）：
+
+| 变量 | 旧 | 新 |
+|---|---|---|
+| `CENTER_IMAGE_TAG` | `v0.23.0-alpha` | **`v0.24.1-alpha`** |
+| `CENTER_WEB_IMAGE_TAG` | `v0.20.0-alpha` | **`v0.21.0-alpha`** |
+| `GATEWAY_IMAGE` | `…/wist-gateway:v0.17.0-alpha` | **`v0.27.0-alpha`** |
+
+带来的能力：中心发布 / 建计划 / 批准计划按包内 `compat.json` 做升级兼容检查（`409 release_incompatible` /
+`rollout_target_incompatible`），包管理页展示「兼容范围 + 检查结果」；中心生成的网关安装命令指向当前网关版。
+
+> 现场升级：`gops prj upgrade` 拉本栈后重建 `center` / `center-web`；现场若在 `.env` 里覆盖了上述
+> 变量，需同步改掉（覆盖值优先于产品默认）。
+
 ## [0.7.0-alpha] - 2026-10-29
 
 ### 变更（需检查现场 values）
