@@ -3,6 +3,23 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.8.0-alpha] - 2026-10-30
+
+### 新增
+
+- **`GATEWAY_PRJ_TPL_REPO`**：网关部署工程（ops-prj）模板仓库。中心生成的「网关全量安装」命令
+  clone 它来落工程（替代 `gops prj new`），默认
+  `https://wgc-git.beta.jingang.cloud/gateway-tx.git`；渲染进 `wist-center.toml` 的
+  `[artifacts] gateway_project_repo`。现场换仓库：在 ops-prj 的
+  `values/<系统名>/sys_value.yml` 覆盖本项，`gops sys localize` 即生效。
+- 网关安装的前置依赖多了 `git`（「环境准备」脚本会自动补装）。
+
+### 升级注意
+
+- 该变量需 **`wist-center >= 0.25.0-alpha`** 才生效：旧版中心不认识 `[artifacts] gateway_project_repo`，
+  仍用内置默认地址（当前两者相同，所以**不冲突**）。跟进中心镜像时把 `CENTER_IMAGE_TAG`
+  一并抬到 `v0.25.0-alpha` 即可。
+
 ## [0.7.1-alpha] - 2026-10-29
 
 ### 变更（组件跟版：兼容性检查与展示）
