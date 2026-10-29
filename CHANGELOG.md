@@ -3,6 +3,20 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.8.1-alpha] - 2026-10-30
+
+### 变更（组件跟版：安装流程走新中心）
+
+| 变量 | 旧 | 新 |
+|---|---|---|
+| `CENTER_IMAGE_TAG` | `v0.24.1-alpha` | **`v0.25.0-alpha`** |
+
+带来的能力：网关「全量安装」改为 clone 部署工程（不再是 `gops prj new`），
+`GATEWAY_PRJ_TPL_REPO` 真正生效；安装材料不全时 503 会点名缺哪个组件。
+
+> 现场升级：`gops prj upgrade`（或栈目录 `git pull` + `gops sys localize`）拉本栈后重建
+> `center`；若现场在 `.env` / `sys_value.yml` 里覆盖了 `CENTER_IMAGE_TAG`，需同步改掉（覆盖值优先）。
+
 ## [0.8.0-alpha] - 2026-10-30
 
 ### 新增
@@ -17,8 +31,8 @@
 ### 升级注意
 
 - 该变量需 **`wist-center >= 0.25.0-alpha`** 才生效：旧版中心不认识 `[artifacts] gateway_project_repo`，
-  仍用内置默认地址（当前两者相同，所以**不冲突**）。跟进中心镜像时把 `CENTER_IMAGE_TAG`
-  一并抬到 `v0.25.0-alpha` 即可。
+  仍用内置默认地址（当前两者相同，所以**不冲突**）。中心镜像已在 `0.8.1-alpha` 抬到
+  `v0.25.0-alpha`。
 
 ## [0.7.1-alpha] - 2026-10-29
 
