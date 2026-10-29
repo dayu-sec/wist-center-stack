@@ -3,6 +3,19 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.7.0-alpha] - 2026-10-29
+
+### 变更（需检查现场 values）
+
+- **产品默认值不再绑定客户仓库地址**：`WP_RULES_REPO_URL` / `WP_INFRA_REPO_URL` 的默认值改为**空**
+  （此前写死 `https://cnb.cool/dy-sec/jingang-cust/wist/wp-rules|wp-infra`）。模板从此不含任何
+  客户 / 仓库路径，换客户不必改本仓。
+  - 两项都留空时中心**照常启动**：`[wparse_release] enabled = false`（发布页没有 ④/⑤），
+    Git Proxy 白名单为空（拒绝一切 git 请求，网关 `project_remote` 拉不到规则）；
+  - `scripts/init-center.sh` / `scripts/init-git-proxy-conf.sh` 会打印一行提示（不阻断 localize）；
+  - **升级注意**：老现场若一直靠默认值（values 里没写这两项），升级后会被置空 ——
+    升级前先在 `values/<系统名>/sys_value.yml` 里显式写上两个 URL。
+
 ## [0.6.0-alpha] - 2026-10-28
 
 ### 新增
