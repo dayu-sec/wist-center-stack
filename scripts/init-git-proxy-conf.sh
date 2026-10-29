@@ -18,8 +18,8 @@
 #   WP_GIT_AUTH_HEADER              鉴权头名（默认 Authorization；Basic 口径）
 #   WP_GIT_PUB_USER                 读账号（可被 .wist 的 wp_git_pub_user 覆盖）
 #   GIT_PROXY_SHORT_PREFIX          短路径别名要补上的上游目录前缀：留空 = 自动取两个仓库的
-#                                   公共上级目录（`.../dy-sec/jingang-cust/wist/wp-*` →
-#                                   `dy-sec/jingang-cust/wist`，于是 Gateway 侧可以只写 `/wp-infra`）；
+#                                   公共上级目录（`.../<组>/<项目>/wp-*` → `<组>/<项目>`，
+#                                   于是 Gateway 侧可以只写 `/wp-infra`）；
 #                                   `off` = 不生成别名；也可显式写一个前缀（必须同时是两个仓库的前缀）。
 #   GIT_PROXY_ALLOW_CIDR            可选来源 IP allowlist（逗号分隔；空 = 不限）
 #   GIT_PROXY_CLIENT_CERT_VERIFY   双向证书：off | optional | on（默认 off）
@@ -178,7 +178,13 @@ for label, url in (("WP_RULES_REPO_URL", models_url), ("WP_INFRA_REPO_URL", infr
     configured.append((label, parsed))
 
 if not configured:
-    # 没配仓库：保留一台「拒一切」的 nginx（不阻断 localize —— 中心单独部署是合法形态）。
+    # 没配仓库：保留一台「拒一切」的 nginx（不阻断 localize —— 中心单独部署是合法形态，
+    # 且产品默认值本来就是空）。这里必须说一句，否则现场只会看到网关拉不到规则。
+    print(
+        "  ⚠ 未配置 WP_RULES_REPO_URL / WP_INFRA_REPO_URL：Git Proxy 白名单为空，将拒绝一切 git 请求"
+        "（网关 project_remote 拉不到规则）",
+        file=sys.stderr,
+    )
     # 上游写成回环回退地址：nginx 在**加载时**就会解析 upstream 主机名，
     # 用不可解析的域名会让 `nginx -t` 直接 emerg；这些 location 永不命中，所以不会真的连上去。
     repo_regex = re.escape(DISABLED_PATH)

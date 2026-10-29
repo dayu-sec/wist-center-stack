@@ -66,9 +66,9 @@ system:
 - name: PG_DB
   value: insight_demo
 - name: WP_RULES_REPO_URL
-  value: https://cnb.cool/dy-sec/jingang-cust/wist/wp-rules
+  value: ''
 - name: WP_INFRA_REPO_URL
-  value: https://cnb.cool/dy-sec/jingang-cust/wist/wp-infra
+  value: ''
 - name: WP_GIT_BASE_URL
   value: ''
 - name: WP_GIT_PUSH_USER

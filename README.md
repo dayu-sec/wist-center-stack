@@ -185,6 +185,30 @@ gops sys localize
 `gops sys localize --no-flow` 可跳过该流程；未装 gx 或无该流程时静默跳过（此时权限 `--apply` 也不会执行，
 但 `gops run start` 的 preflight 会拦住未对齐的启动）。
 
+#### 规则 / 配置仓库地址（本栈不带客户地址）
+
+`WP_RULES_REPO_URL` / `WP_INFRA_REPO_URL` 的产品默认值是**空** —— 模板里不写任何客户 / 仓库路径。
+两项都留空时中心可以正常启动，只是**规则能力不可用**：
+
+| 留空时 | 表现 |
+|---|---|
+| `[wparse_release]` | `enabled = false` → 发布页没有 ④ wparse-rules / ⑤ wparse-infra |
+| Git Proxy 白名单 | 为空 → `info/refs` 等一律拒绝，网关 `project_remote` 拉不到规则 |
+| 包发布 / 网关管理 | 不受影响 |
+
+要启用时在 values 里补（示例，两个仓库必须**同主机**）：
+
+```yaml
+# <ops-prj>/values/wist-center-stack/sys_value.yml
+WP_RULES_REPO_URL: https://cnb.cool/<组>/<项目>/wp-rules
+WP_INFRA_REPO_URL: https://cnb.cool/<组>/<项目>/wp-infra
+```
+
+- `localize` 会打一行提示（`wparse_release 关闭` / `Git Proxy 白名单为空`），不是报错；
+- 只配一个时发布入口保持关闭、Git Proxy 只放行已配的那个，并打印告警；
+- 模板里 `provider` 固定为 `cnb`（GitHub / manual 需要改中心的 `[wparse_release.repos]`）；
+- **升级注意**：老现场若一直靠默认值（values 里没写这两项），升级后会被置空 —— 升级前先显式写上。
+
 #### 脚本读密钥的唯一入口
 
 宿主机侧的初始化脚本不自己解析 `.wist/sec-value.yml`，统一 `source scripts/lib/sec.sh` 后调：
@@ -229,8 +253,8 @@ Git Proxy 把 `wp_git_pub_*` 注入 `WP_GIT_AUTH_HEADER`（默认 `Authorization
 `configs/git-proxy/nginx.conf`；换 Git 提供商时只改 URL 与可选的头名，不改变量名。
 
 CNB 的权限坑（实测）：token 必须带 **`repo-code:r`**（读），作用域要覆盖 **两个仓库**
-（建议建在 `dy-sec/jingang-cust` 组上）。作用域不含某仓库时 CNB 返回
-`Repository Not Found`（而不是 403），容易误判成“仓库写错”。
+（建在两个仓库的公共上级组上即可，例如 URL 是 `<组>/<项目>/wp-*` 就建在 `<组>` 上）。
+作用域不含某仓库时 CNB 返回 `Repository Not Found`（而不是 403），容易误判成“仓库写错”。
 
 - 中心配置里只写 `${SEC_CENTER_*}` 占位，由 `WIST_CENTER_SEC_FILE` 指向本文件解析；
 - `db-init` 从本文件读取 `center_db_password`，创建角色并收紧 `CONNECT`；
@@ -261,11 +285,11 @@ docker compose --project-directory . -f sys/docker-compose.yml \
 
 #### Git Proxy 的短路径（`/<repo>` 也能拉）
 
-两个仓库 URL 的**公共上级目录**会被自动补上。以 `cnb.cool/dy-sec/jingang-cust/wist/wp-*` 为例，
-公共上级是 `dy-sec/jingang-cust/wist`，于是下面两种写法等价（`git clone` 都可以）：
+两个仓库 URL 的**公共上级目录**会被自动补上。例如仓库是 `cnb.cool/<组>/<项目>/wp-*`，
+公共上级就是 `<组>/<项目>`，于是下面两种写法等价（`git clone` 都可以）：
 
 ```text
-https://<wp-git>:18082/dy-sec/jingang-cust/wist/wp-infra
+https://<wp-git>:18082/<组>/<项目>/wp-infra
 https://<wp-git>:18082/wp-infra
 ```
 

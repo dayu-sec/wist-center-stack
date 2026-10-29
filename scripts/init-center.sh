@@ -60,6 +60,10 @@ if [[ -n "${WP_RULES_REPO_URL}" && -n "${WP_INFRA_REPO_URL}" ]]; then
   WPARSE_RELEASE_ENABLED="true"
 elif [[ -n "${WP_RULES_REPO_URL}" || -n "${WP_INFRA_REPO_URL}" ]]; then
   echo "  ⚠ 只配置了一个 Git repo（WP_RULES_REPO_URL / WP_INFRA_REPO_URL），wparse_release 保持关闭" >&2
+else
+  # 产品默认值就是空（模板不绑定客户仓库），所以这里是**正常形态**而不是漏配 ——
+  # 但仍要说一句：否则「发布页没有 ④/⑤」会被当成中心坏了。
+  echo "  · 未配置 Git 仓库（WP_RULES_REPO_URL / WP_INFRA_REPO_URL）：wparse_release 关闭（发布页无 ④/⑤）" >&2
 fi
 # 两个 URL 会原样写进 value.json；含引号 / 反斜杠 / 换行会破坏 JSON，提前拒掉。
 case "${WP_RULES_REPO_URL}${WP_INFRA_REPO_URL}" in

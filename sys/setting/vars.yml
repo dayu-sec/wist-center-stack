@@ -148,14 +148,24 @@ system:
     value: insight_demo
 
   # 外部 Git 仓库（私有，已存在）。Center 的规则发布入口与 Git Proxy 共用。
+  #
+  # **产品默认值为空：模板不绑定任何客户 / 仓库地址**（示例见 README「变量与本地化」）。
+  # 两项都留空时中心照常启动，但：
+  #   · 规则 / 配置发布入口关闭（`[wparse_release] enabled = false`，发布页没有 ④/⑤）；
+  #   · Git Proxy 白名单为空 → 拒绝一切 git 请求（网关 `project_remote` 拉不到规则）；
+  #   · 中心仍可正常做包发布 / 网关管理。
+  # 要这两项能力时，在 ops-prj 的 `values/<系统名>/sys_value.yml` 里覆盖：
+  #   WP_RULES_REPO_URL: https://<git-host>/<组>/<项目>/wp-rules
+  #   WP_INFRA_REPO_URL: https://<git-host>/<组>/<项目>/wp-infra
+  #
   #   WP_RULES_REPO_URL / WP_INFRA_REPO_URL：预克隆与 push 的远端（必须同主机）；
   #   WP_GIT_BASE_URL：[gitea] base_url 占位；留空 = 从两个 repo URL 推导；
   #   WP_GIT_PUSH_USER / WP_GIT_PUB_USER：写/读账号（可被 .wist 的 wp_git_*_user 覆盖）；
   #   token 不放这里：.wist/sec-value.yml 的 wp_git_push_token / wp_git_pub_token。
   - name: WP_RULES_REPO_URL
-    value: https://cnb.cool/dy-sec/jingang-cust/wist/wp-rules
+    value: ''
   - name: WP_INFRA_REPO_URL
-    value: https://cnb.cool/dy-sec/jingang-cust/wist/wp-infra
+    value: ''
   - name: WP_GIT_BASE_URL
     value: ''
   - name: WP_GIT_PUSH_USER
@@ -172,8 +182,8 @@ system:
     value: ''
 
   # 短路径别名：Git Proxy 自动补上的上游目录前缀，Gateway 侧就能只写 `/wp-infra`。
-  #   留空 = 自动取两个仓库 URL 的**公共上级目录**（`.../dy-sec/jingang-cust/wist/wp-*`
-  #   → `dy-sec/jingang-cust/wist`）；`off` = 不生成别名（只认完整路径）；
+  #   留空 = 自动取两个仓库 URL 的**公共上级目录**（`.../<组>/<项目>/wp-*`
+  #   → `<组>/<项目>`）；`off` = 不生成别名（只认完整路径）；
   #   也可显式写一个前缀（必须同时是两个仓库的前缀）。
   - name: GIT_PROXY_SHORT_PREFIX
     value: ''

@@ -114,7 +114,7 @@ http {
             proxy_buffering off;
         }
 
-        # 短路径别名：客户端写 `/<repo>`（可省上游的公共上级目录，如 `/dy-sec/jingang-cust/wist`），
+        # 短路径别名：客户端写 `/<repo>`（可省上游的公共上级目录，如 `/<组>/<项目>`），
         # 代理补回真实路径后**重新走一次 location 匹配**（`rewrite ... last`）→ 命中上面的全路径白名单。
         # 因此白名单 / 端点限制 / 限流 / 上游凭据只有一份，别名不绕过任何一条。
         # {{{git_proxy_short_note}}}
