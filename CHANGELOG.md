@@ -3,6 +3,20 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.9.1-alpha] - 2026-10-30
+
+### 变更（组件跟版：镜像通道改为可勾选）
+
+| 变量 | 旧 | 新 |
+|---|---|---|
+| `CENTER_IMAGE_TAG` | `v0.26.0-alpha` | **`v0.26.1-alpha`** |
+| `CENTER_WEB_IMAGE_TAG` | `v0.22.0-alpha` | **`v0.22.1-alpha`** |
+
+带来的能力：录入安装包时**可勾选是否经 githubproxy**（默认勾选），取消即直连 `github.com`。
+来源配置里的 `github_proxy` 仍是通道地址本身：不配 = 没有勾选框、也不会有通道。
+
+> 现场升级：`gops sys localize` + 重建 `center` / `web`。若在 `.env` / `sys_value.yml` 里覆盖了两个 tag，需同步改掉（覆盖值优先）。
+
 ## [0.9.0-alpha] - 2026-10-30
 
 ### 新增（组件跟版 + GitHub 镜像通道）

@@ -36,9 +36,9 @@ system:
   #   CENTER_IMAGE_TAG       wist-center 的 release tag
   #   CENTER_WEB_IMAGE_TAG   wist-center-web 的 release tag
   - name: CENTER_IMAGE_TAG
-    value: v0.26.0-alpha
+    value: v0.26.1-alpha
   - name: CENTER_WEB_IMAGE_TAG
-    value: v0.22.0-alpha
+    value: v0.22.1-alpha
   # 观测镜像 tag（源前缀见 VM_REGISTRY）
   - name: VM_IMAGE_TAG
     value: v1.154.0
