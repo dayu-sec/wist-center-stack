@@ -70,11 +70,16 @@ object_storage_secret_key = ""
 
 # 安装包来源：录入页按**版本号**拼 GitHub Release 地址 / COS 路径，再做 URL 探活。
 # GitHub 与 COS 可同时配；只配一个时另一个仍可手工粘贴地址。只写位置，不写凭据。
+#
+# `github_proxy`（每组件可选）：GitHub 制品的镜像 / 加速通道。配了它，解析出来的
+# `artifact_url` 就是 `<通道>/<https://github.com/...>`（与 COS 同理：**记录进去的就是镜像地址**，
+# 网关安装 / 升级的脚本只管照 URL 下载）。不配 = 直连 github.com。
 [packages]
 
 [[packages.sources]]
 component = "wist-agentd"
 github_repo = "dayu-sec/wist-agentd"
+github_proxy = "https://githubproxy.cc"
 cos_bucket = "github-1347593047"
 cos_prefix = "wist-agentd"
 cos_region = "ap-hongkong"
@@ -82,6 +87,7 @@ cos_region = "ap-hongkong"
 [[packages.sources]]
 component = "wist-gateway-stack"
 github_repo = "dayu-sec/wist-gateway-stack"
+github_proxy = "https://githubproxy.cc"
 cos_bucket = "github-1347593047"
 cos_prefix = "wist-gateway-stack"
 cos_region = "ap-hongkong"
@@ -89,6 +95,7 @@ cos_region = "ap-hongkong"
 [[packages.sources]]
 component = "wist-gwlinkd"
 github_repo = "dayu-sec/wist-gwlinkd"
+github_proxy = "https://githubproxy.cc"
 cos_bucket = "github-1347593047"
 cos_prefix = "wist-gwlinkd"
 cos_region = "ap-hongkong"
@@ -96,14 +103,17 @@ cos_region = "ap-hongkong"
 [[packages.sources]]
 component = "galaxy-ops"
 github_repo = "galaxio-labs/galaxy-ops"
+github_proxy = "https://githubproxy.cc"
 
 [[packages.sources]]
 component = "galaxy-flow"
 github_repo = "galaxio-labs/galaxy-flow"
+github_proxy = "https://githubproxy.cc"
 
 [[packages.sources]]
 component = "wist-knowledge"
 github_repo = "dayu-sec/wist-knowledge"
+github_proxy = "https://githubproxy.cc"
 cos_bucket = "github-1347593047"
 cos_prefix = "wist-knowledge"
 cos_region = "ap-hongkong"

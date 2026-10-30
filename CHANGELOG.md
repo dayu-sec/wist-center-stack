@@ -3,6 +3,25 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.9.0-alpha] - 2026-10-30
+
+### 新增（组件跟版 + GitHub 镜像通道）
+
+| 变量 | 旧 | 新 |
+|---|---|---|
+| `CENTER_IMAGE_TAG` | `v0.25.0-alpha` | **`v0.26.0-alpha`** |
+| `CENTER_WEB_IMAGE_TAG` | `v0.21.0-alpha` | **`v0.22.0-alpha`** |
+
+- **`[[packages.sources]].github_proxy`**：GitHub 制品的**镜像 / 加速通道**（每组件一份，本栈默认
+  全部配 `https://githubproxy.cc`）。与 COS 同一套逻辑：**解析 GitHub Release 时就把
+  `artifact_url` 写成 `<通道>/<https://github.com/...>`**，录入进库、下发给网关的就是镜像地址，
+  安装 / 升级脚本只管照 URL 下载。某组件不配 = 直连 github.com（不隐式走第三方代理）。
+  现场改通道 / 关掉：改渲染出的 `wist-center.toml` 对应 `[[packages.sources]]` 再重建 `center`。
+- 管理前端跟版 `v0.22.0-alpha`：录入页在「GitHub Release」下提示该组件走的镜像通道。
+
+> 现场升级：先等 `ghcr.io/dayu-sec/wist-center:v0.26.0-alpha` 发布完，再拉本栈、
+> `gops sys localize`、`gops run start`（`CENTER_IMAGE_TAG` 已同步改）。
+
 ## [0.8.1-alpha] - 2026-10-30
 
 ### 变更（组件跟版：安装流程走新中心）
