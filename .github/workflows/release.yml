@@ -29,7 +29,7 @@ jobs:
         include:
           - { os: ubuntu-24.04, triple: x86_64-unknown-linux-musl }
           - { os: ubuntu-24.04, triple: aarch64-unknown-linux-musl }
-          - { os: macos-14,      triple: aarch64-apple-darwin }
+          - { os: macos-15,      triple: aarch64-apple-darwin }
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
