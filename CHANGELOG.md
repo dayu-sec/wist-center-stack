@@ -3,6 +3,25 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.9.2-alpha] - 2026-11-01
+
+### 变更（发布火车：中心 0.27 + 中心前端 0.23）
+
+- `CENTER_IMAGE_TAG` → **`v0.27.0-alpha`**：`agent_status` 新增 `node_id` / `hostname` / `ip_addresses`
+  三列（`TEXT[]`），并在 `GET /api/v1/admin/gateways/{id}/agents` 读出；**存量库启动自动补列**
+  （`PgStore::connect` 每次启动整份执行 `initdb/01_schema.sql`，新增 `ALTER TABLE … IF NOT EXISTS`），
+  不需要人工迁移。
+- `CENTER_WEB_IMAGE_TAG` → **`v0.23.0-alpha`**：网关详情「Agent 状态」卡片显示 **hostname / IP**
+  （悬停看 `node_id`），一个网关下几十台机器时能分清谁是谁。
+- **配套**：网关 ≥ `0.33.0-alpha`（环回 Agent 明细面）+ gwlinkd ≥ `0.19.0-alpha`（60s 代报）；
+  数据面规则、授权模型、落盘路径均无变化。
+
+### 已知（与本次无关）
+
+- `./dev/push-images.sh` 报 `postgres:16` 在 TCR 上不存在、且当前账号无 `cloud/postgres` 的 push 权限
+  （`unauthorized`）。**只影响把镜像源指到 TCR 的部署**；compose 默认仍走 docker.io，不受影响。
+  补推需要换一个有 push 权限的账号后重跑该脚本。
+
 ## [0.9.1-alpha] - 2026-10-30
 
 ### 变更（组件跟版：镜像通道改为可勾选）
