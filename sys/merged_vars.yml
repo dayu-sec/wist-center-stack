@@ -8,7 +8,7 @@ system:
 - name: GIT_PROXY_REGISTRY
   value: docker.io/library
 - name: CENTER_IMAGE_TAG
-  value: v0.27.0-alpha
+  value: v0.27.1-alpha
 - name: CENTER_WEB_IMAGE_TAG
   value: v0.24.0-alpha
 - name: VM_IMAGE_TAG
