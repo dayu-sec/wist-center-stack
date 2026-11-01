@@ -3,6 +3,16 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.9.3-alpha] - 2026-11-01
+
+### 变更（组件跟版：中心前端 0.24）
+
+- `CENTER_WEB_IMAGE_TAG` → **`v0.24.0-alpha`**：网关详情新增独立的「Agent 状态」tab（`/gateways/:id/agents`，
+  概览不再被 Agent 卡片占位）；任务队列（`/jobs`）内容宽度收到 `--content-max`，宽屏不再拉满整行。
+- **配套**：只改前端镜像，`CENTER_IMAGE_TAG`（`v0.27.0-alpha`）不变 —— 该前端版本只用到既有的
+  `GET /api/v1/admin/gateways/{id}/agents`；数据面规则、授权模型、落盘路径均无变化。
+- 无需数据库迁移：纯前端发布，重启 `web` 即生效。
+
 ## [0.9.2-alpha] - 2026-11-01
 
 ### 变更（发布火车：中心 0.27 + 中心前端 0.23）
