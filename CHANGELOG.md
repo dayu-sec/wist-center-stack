@@ -3,6 +3,23 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.10.1-alpha] - 2026-11-03
+
+### 组件跟版（中心 0.29：agent 指标名与标签对齐规范）
+
+- `CENTER_IMAGE_TAG` → **`v0.29.0-alpha`**。中心写入 VictoriaMetrics 的 agent 自身指标改用规范名与
+  规范单位：`agent_cpu_percent` → `agent_cpu_ratio`（0–1 单核比例）、
+  `agent_admin_latency_ms` → `agent_admin_latency_seconds`；序列 label `agent_id` → `agent`。
+- 管理面响应字段不变（`cpuPercent` / `adminLatencyMs`），**页面无感**；换算在中心读取时做一次。
+- `CENTER_WEB_IMAGE_TAG` / `VM_IMAGE_TAG` / `GIT_PROXY_IMAGE_TAG` / `PG_IMAGE_TAG` 不变。
+
+### 升级注意
+
+- **直接查中心 VM 的看板 / 告警需要改名**：按 `agent_cpu_percent` / `agent_admin_latency_ms` /
+  `agent_id` 写的查询，从本版起不再有新数据；`agent_up` / `agent_info` / `agent_health` 名字不变
+  但标签跟随改成 `agent`。历史曲线在切换点断档（不回填）。
+- 升级后先 `gops sys localize` 让新 tag 落进 `.env`，再 `gops run start`。
+
 ## [0.10.0-alpha] - 2026-11-03
 
 ### 新增：程序访问凭据（跟版中心 0.28）
