@@ -164,6 +164,38 @@ gateway_credentials = []
 enabled = true
 listen_addr = "0.0.0.0:3101"
 
+# ── 程序访问凭据（wist-cred 验证方）──────────────────────────────────────────
+#
+# 开启后中心多起一个**内网 mTLS listener**（容器内 3103），接收 cred 推来的凭据摘要，
+# 并让管理面的 `Authorization: Bearer <token>` 先按摘要表验（roles: admin → 管理面，read → 只读）。
+#
+# 材料由 cred 的一次性接入命令落到 `identity/center/cred/`（整个 identity/center 只读挂到
+# /wist-center/ca）：
+#   server.crt     本 listener 的服务器证书，必须由 **CA-S** 签（cred 的唯一信任锚）；
+#   server.key     对应私钥（本机生成，永不上送）；
+#   client-ca.pem  CA-I 的公开证书（验 cred 的客户端证书）。
+# 注意：这张服务器证书与网关面使用的 control-center-server.{crt,key} **不是同一张**。
+[credentials]
+{{#if credentials_enabled}}enabled = true
+{{else}}enabled = false
+{{/if}}
+listen_addr = "0.0.0.0:3103"
+store_path = "state/credentials.json"
+audience = "wist-center"
+allowed_issuers = ["wist-cred"]
+known_roles = ["admin", "read"]
+admin_roles = ["admin"]
+server_cert_path = "/wist-center/ca/cred/server.crt"
+server_key_path = "/wist-center/ca/cred/server.key"
+client_ca_path = "/wist-center/ca/cred/client-ca.pem"
+# 授权记录的 Ed25519 签名公钥（接入包一并下发）：收到时与加载时各验一次。
+# 文件格式：**一行一把**（裸 32 字节 hex）。轮换期可同时放新旧两把，旧记录仍能验过。
+# 验不过的记录不会进内存表；启动日志里有 `rejected on load` 条数。
+# 灰度窗口（`credentials_require_signature = false`）下文件缺失/为空不阻断启动。
+{{#if credentials_require_signature}}require_signature = true
+{{else}}require_signature = false
+{{/if}}issuer_public_key_path = "/wist-center/ca/cred/issuer-signing.pub"
+
 # 本进程自己的运行日志（env_logger，走 log facade）。
 # 落文件（相对本配置目录解析 → 已挂载的 /wist-center/logs/，自动建父目录），写满自轮转。
 # 注意：给了 `file` 就**不再**写 stderr（`docker logs` 看不到中心自身日志；打开失败会回落 stderr）。

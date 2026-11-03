@@ -3,6 +3,28 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.10.0-alpha] - 2026-11-03
+
+### 新增：程序访问凭据（跟版中心 0.28）
+
+- `CENTER_IMAGE_TAG` → **`v0.28.0-alpha`**：中心可作为 `wist-cred` 的验证方，接收程序凭据。
+  管理面 `Authorization: Bearer` 先按摘要表验，`admin` 进管理面、`read` 只读；
+  `center_admin_token` 降级为 break-glass（命中记 `warn`）。
+- **授权记录验签**：cred 用 Ed25519 签每条记录，中心收到时与从磁盘加载时各验一次；
+  改角色 / 延长有效期 / 清撤销标记的记录会被丢弃（启动日志打印 `rejected on load`）。
+- compose 新增内网端口 `CREDENTIALS_HOST_PORT`（默认 `3103`，只绑回环）。
+- `scripts/init-center.sh` 启用凭据时校验 `identity/center/cred/` 四件材料齐全；
+  新增 `CREDENTIALS_ENABLED` / `CREDENTIALS_BIND_IP` / `CREDENTIALS_HOST_PORT` 三个变量。
+- `issuer-signing.pub` 支持**一行一把**（轮换期双跑）；`CREDENTIALS_REQUIRE_SIGNATURE='false'`
+  的灰度窗口允许该文件缺失或为空，不阻断中心启动。
+
+### 升级注意
+
+- 需要 `wist-cred 0.4.0`（签名）与 `wist-cred-peer 0.2`（验签）已发布。
+- 已接入过的现场要重跑一次 cred 接入命令，补下 `issuer-signing.pub`；旧的无签名记录
+  在开启 `require_signature` 后会被丢弃，需在 cred 页面「重推」。
+- 未启用 `[credentials]` 的现场行为不变（只是多了一个不监听的宿主端口映射）。
+
 ## [0.9.4-alpha] - 2026-11-01
 
 ### 变更（组件跟版：中心 0.27.1）

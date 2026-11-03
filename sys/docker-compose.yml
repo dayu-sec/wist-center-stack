@@ -166,6 +166,9 @@ services:
       - "${CENTER_API_BIND_IP}:${CENTER_API_HOST_PORT}:3100"
       - "${CENTER_ADMIN_BIND_IP}:${CENTER_ADMIN_HOST_PORT}:3102"
       - "${WPARSE_PROXY_BIND_IP}:${WPARSE_PROXY_HOST_PORT}:3101"
+      # 3103 = 程序访问凭据（wist-cred 验证方；mTLS，内网）。默认只绑回环：
+      # 同机部署时 cred 用 host.docker.internal / 宿主内网 IP 推过来。
+      - "${CREDENTIALS_BIND_IP}:${CREDENTIALS_HOST_PORT}:3103"
     depends_on:
       postgres:
         condition: service_healthy

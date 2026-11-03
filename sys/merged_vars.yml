@@ -8,7 +8,7 @@ system:
 - name: GIT_PROXY_REGISTRY
   value: docker.io/library
 - name: CENTER_IMAGE_TAG
-  value: v0.27.1-alpha
+  value: v0.28.0-alpha
 - name: CENTER_WEB_IMAGE_TAG
   value: v0.24.0-alpha
 - name: VM_IMAGE_TAG
@@ -53,6 +53,14 @@ system:
   value: 127.0.0.1
 - name: WPARSE_PROXY_HOST_PORT
   value: 18083
+- name: CREDENTIALS_ENABLED
+  value: 'false'
+- name: CREDENTIALS_REQUIRE_SIGNATURE
+  value: 'true'
+- name: CREDENTIALS_BIND_IP
+  value: 127.0.0.1
+- name: CREDENTIALS_HOST_PORT
+  value: 3103
 - name: VM_RETENTION_MONTHS
   value: 6
 - name: TZ

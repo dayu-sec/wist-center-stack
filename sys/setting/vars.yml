@@ -36,7 +36,7 @@ system:
   #   CENTER_IMAGE_TAG       wist-center 的 release tag
   #   CENTER_WEB_IMAGE_TAG   wist-center-web 的 release tag
   - name: CENTER_IMAGE_TAG
-    value: v0.27.1-alpha
+    value: v0.28.0-alpha
   - name: CENTER_WEB_IMAGE_TAG
     value: v0.24.0-alpha
   # 观测镜像 tag（源前缀见 VM_REGISTRY）
@@ -127,6 +127,26 @@ system:
     value: 127.0.0.1
   - name: WPARSE_PROXY_HOST_PORT
     value: 18083
+
+  # 程序访问凭据（wist-cred 验证方）：中心在这上面收摘要 / 让 cred 探心跳。
+  #   CREDENTIALS_ENABLED    总开关。false = 不起 listener（管理面只认 break-glass 口令）。
+  #   CREDENTIALS_BIND_IP    宿主绑定地址。**默认只绑回环**（内网面）；
+  #                          跨主机部署时改成中心的内网网卡 IP。
+  #   CREDENTIALS_HOST_PORT  宿主端口；容器内固定 3103。
+  #
+  # 材料目录：`identity/center/cred/`（cred 的一次性接入命令落在这里）：
+  #   server.crt / server.key / client-ca.pem
+  # 中心容器把整个 identity/center 只读挂到 /wist-center/ca，所以配置里用 /wist-center/ca/cred/*。
+  - name: CREDENTIALS_ENABLED
+    value: 'false'
+  # 授权记录必须带签发方签名（**默认开**）。升级窗口可先设 'false'：
+  # 顺序是「验证方（先关验签）→ cred（开始签）→ 打开验签」。
+  - name: CREDENTIALS_REQUIRE_SIGNATURE
+    value: 'true'
+  - name: CREDENTIALS_BIND_IP
+    value: 127.0.0.1
+  - name: CREDENTIALS_HOST_PORT
+    value: 3103
 
   # 指标保留期（月）与时区
   - name: VM_RETENTION_MONTHS

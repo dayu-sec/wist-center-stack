@@ -353,6 +353,62 @@ https://<wp-git>:18082/wp-infra
 > 而 center / web / git-proxy 挂的是同一个证书文件 —— 三个容器要一起重启。
 > 完整步骤与本阶段的取舍见仓根 `TODO.md` P1。
 
+### 程序访问凭据（接入 wist-cred）
+
+中心可以接收 [`wist-cred`](https://github.com/dayu-sec/wist-cred) 签发的**程序凭据**：开启
+`[credentials]` 后，管理面的 `Authorization: Bearer <token>` 先按 cred 推来的摘要表验，
+`admin` 角色进管理面、`read` 只读；原来的 `center_admin_token` 退化为 **break-glass**
+（cred 不可用 / 轮换期兜底，命中即打 `warn`）。
+
+链路：cred 经 mTLS（客户端证书由 **CA-I** 签）把摘要推到中心的 `3103`；中心只存 `sha256`，
+不进 PostgreSQL。服务器证书由 cred 的 **CA-S** 按 CSR 签出 —— **不是**网关面那张
+`control-center-server.*`。
+
+授权内容（角色 / 有效期 / 撤销状态）由 cred 用 **Ed25519 签名**；中心收到时验一次，从磁盘
+加载时再验一次，验不过的记录不会进内存表（启动日志会打印 `rejected on load` 条数）。
+签名公钥随接入包落 `identity/center/cred/issuer-signing.pub`。
+
+1. 在 cred 页面创建认证系统 **`wist-center`**（这个名字就是凭据的 `audience`），生成一次性接入命令。
+2. 在中心主机执行（材料落到本栈身份目录，容器已把 `identity/center` 只读挂到 `/wist-center/ca`）：
+
+   ```bash
+   curl -fsSLk '<cred 生成的一次性接入命令>' | bash -s -- \
+     --dir ./identity/center/cred \
+     --host 'center.internal' \
+     --advertise 'https://<cred 能访问到的中心地址>:3103/api/v1/internal/credentials' \
+     --roles 'admin,read'
+   ```
+
+   `--host` 会写进证书 SAN，必须与 cred 推送时使用的地址一致；`--advertise` 报给 cred 的
+   收数地址，端口与 `CREDENTIALS_HOST_PORT` 对齐。
+3. 打开开关（`values/<系统名>/sys_value.yml`）：`CREDENTIALS_ENABLED: 'true'`。
+   跨主机部署时把 `CREDENTIALS_BIND_IP` 从 `127.0.0.1` 改成中心的内网网卡 IP。
+
+   `CREDENTIALS_REQUIRE_SIGNATURE` 默认 `'true'`。**升级窗口**可以先设 `'false'`，等 cred 升到
+   0.4（开始签名）后再改回 `'true'` —— 顺序是「验证方先升（可先关验签）→ cred 开始签 → 打开验签」。
+   开了验签后，旧的无签名记录会在加载时被丢弃；请在 cred 页面「重推」。
+4. `gops sys localize`（会校验 `identity/center/cred/` 的四件材料：`server.crt` / `server.key` /
+   `client-ca.pem` / `issuer-signing.pub`）→ `gops run restart`。
+
+   > 本版本之前接入过的现场：请重新生成一条接入命令再跑一次，把 `issuer-signing.pub` 补下来；
+   > 旧记录没有签名，开启 `require_signature` 后会在加载时被丢弃，需要让 cred 重新推送
+   > （或在 cred 页面「重推」）。
+5. 回到 cred 页面，为 `wist-center` 签发凭据：角色选 `admin`（管理面）或 `read`（只读），
+   把明文 token 交给调用方（只显示一次，服务端只存摘要）。
+
+排查：`curl --cert ... --key ... --cacert ca-s.crt https://<host>:3103/healthz` 应返回
+`{"audience":"wist-center",...}`。管理面错误码：
+
+| 场景 | HTTP | `code` |
+|---|---|---|
+| 凭据过期（该续期了） | 401 | `admin_credential_expired` |
+| 凭据已撤销 | 401 | `admin_credential_revoked` |
+| 凭据未登记 | 401 | `admin_credential_unknown` |
+| 其他无效 token | 401 | `invalid_admin_bearer_token` |
+| 认证通过但角色不足 | 403 | `admin_role_required` |
+
+过期 / 撤销**不计入**暴力尝试，客户端轮询不会被锁死。
+
 ### 前置：挂载文件
 
 compose 还挂这些路径：

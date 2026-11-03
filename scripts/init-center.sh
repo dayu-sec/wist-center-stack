@@ -58,6 +58,18 @@ GATEWAY_PRJ_TPL_REPO="${GATEWAY_PRJ_TPL_REPO:-https://wgc-git.beta.jingang.cloud
 # 只配一个时保持关闭，避免中心因为 repo 为空起不来；运维补齐后再重新 localize。
 WP_RULES_REPO_URL="${WP_RULES_REPO_URL:-}"
 WP_INFRA_REPO_URL="${WP_INFRA_REPO_URL:-}"
+# 程序访问凭据（wist-cred 验证方）：来自 vars 的 CREDENTIALS_ENABLED（'true' / 'false'）。
+CREDENTIALS_ENABLED="${CREDENTIALS_ENABLED:-false}"
+CREDENTIALS_REQUIRE_SIGNATURE="${CREDENTIALS_REQUIRE_SIGNATURE:-true}"
+for _flag in "${CREDENTIALS_ENABLED}" "${CREDENTIALS_REQUIRE_SIGNATURE}"; do
+  case "${_flag}" in
+    true | false) ;;
+    *)
+      echo "错误：CREDENTIALS_ENABLED / CREDENTIALS_REQUIRE_SIGNATURE 只能是 'true' 或 'false'（当前：'${_flag}'）" >&2
+      exit 1
+      ;;
+  esac
+done
 WPARSE_RELEASE_ENABLED="false"
 if [[ -n "${WP_RULES_REPO_URL}" && -n "${WP_INFRA_REPO_URL}" ]]; then
   WPARSE_RELEASE_ENABLED="true"
@@ -86,6 +98,36 @@ if [[ "${WPARSE_RELEASE_ENABLED}" == "true" ]]; then
 fi
 
 note() { echo "  $*"; }
+
+# 凭据 listener 能起来的前提：cred 的一次性接入命令已经把三件材料落到 identity/center/cred/。
+# 这里只校验，不生成 —— 私钥与服务器证书只能由 cred 按 CSR 签出。
+if [[ "${CREDENTIALS_ENABLED}" == "true" ]]; then
+  missing_cred=""
+  for name in server.crt server.key client-ca.pem; do
+    [[ -f "${IDENTITY_DIR}/cred/${name}" ]] || missing_cred="${missing_cred} ${name}"
+  done
+  # 签名公钥只在开启验签时必需（升级窗口可先关）。
+  if [[ "${CREDENTIALS_REQUIRE_SIGNATURE}" == "true" ]]; then
+    [[ -f "${IDENTITY_DIR}/cred/issuer-signing.pub" ]] \
+      || missing_cred="${missing_cred} issuer-signing.pub"
+  fi
+  if [[ -n "${missing_cred}" ]]; then
+    cat >&2 <<EOF
+错误：CREDENTIALS_ENABLED=true，但 ${IDENTITY_DIR}/cred/ 缺少：${missing_cred# }
+
+请先在 wist-cred 页面为认证系统「wist-center」生成一条接入命令，在中心主机上执行（--dir 指向本目录）：
+  curl -fsSLk '<接入命令>' | bash -s -- \\
+    --dir '${IDENTITY_DIR}/cred' \\
+    --host 'center.internal' \\
+    --advertise 'https://<cred 能访问到的中心地址>:3103/api/v1/internal/credentials' \\
+    --roles 'admin,read'
+
+完成后重新 gops sys localize。
+EOF
+    exit 1
+  fi
+  note "凭据 listener 材料就绪：${IDENTITY_DIR}/cred/"
+fi
 
 if [[ -z "${DOMAIN}" ]]; then
   echo "用法: $0 <配置目录> <对外域名>  （或设 WEB_WGC_DOMAIN）" >&2
@@ -249,7 +291,9 @@ cat >"${tmp}" <<EOF
   "gateway_prj_tpl_repo": "${GATEWAY_PRJ_TPL_REPO}",
   "wparse_release_enabled": ${WPARSE_RELEASE_ENABLED},
   "wp_rules_repo": "${WP_RULES_REPO_URL}",
-  "wp_infra_repo": "${WP_INFRA_REPO_URL}"
+  "wp_infra_repo": "${WP_INFRA_REPO_URL}",
+  "credentials_enabled": ${CREDENTIALS_ENABLED},
+  "credentials_require_signature": ${CREDENTIALS_REQUIRE_SIGNATURE}
 }
 EOF
 # value.json 里有 DB 应用账号的口令（database_url），不能对其他用户可读：
