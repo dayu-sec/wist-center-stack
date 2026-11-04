@@ -3,6 +3,19 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.11.3-alpha] - 2026-11-04
+
+### 组件跟版
+
+- `CENTER_IMAGE_TAG` → **`v0.32.1-alpha`**：修 macOS 上跑网关安装脚本必挂在 `gops prj import`
+  （`UnknownIssuer`）—— 产物改由 curl（带中心 CA）下到本地，gops 只吃本地包。
+- `CENTER_WEB_IMAGE_TAG` 不变（`v0.25.0-alpha`）。
+
+### 升级注意
+
+- 只换中心镜像（`gops prj upgrade -v 0.11.3-alpha` 或 `gops sys localize` + `gops run start`）；
+  升级后再重新生成网关安装命令，拿到的就是修好的脚本。
+
 ## [0.11.2-alpha] - 2026-11-04
 
 ### 组件跟版
