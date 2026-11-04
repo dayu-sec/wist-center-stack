@@ -181,20 +181,18 @@ listen_addr = "0.0.0.0:3101"
 {{/if}}
 listen_addr = "0.0.0.0:3103"
 store_path = "state/credentials.json"
-audience = "wist-center"
-allowed_issuers = ["wist-cred"]
-known_roles = ["admin", "read"]
+# 接入文件：由 `wist-cred` 接入脚本产出（`--dir ./identity/center/cred`）。
+#   [identity] cert / key / client_ca      → 本 listener 的 mTLS 材料（CA-S 签的服务器证书 + CA-I 信任锚）
+#   [verify]   audience / allowed_issuers / issuer_public_key_file / roles
+# 文件里的相对路径按**它所在目录**解；整个 `identity/center` 只读挂在 `/wist-center/ca`。
+# 文件里的值覆盖本段同名字段（文件是机器写的，才是真的）。
+file = "/wist-center/ca/cred/cred.toml"
+# 管理面准入门槛（跑题）：谁能进管理面是 center 自己的决定，不从文件来。
 admin_roles = ["admin"]
-server_cert_path = "/wist-center/ca/cred/server.crt"
-server_key_path = "/wist-center/ca/cred/server.key"
-client_ca_path = "/wist-center/ca/cred/client-ca.pem"
-# 授权记录的 Ed25519 签名公钥（接入包一并下发）：收到时与加载时各验一次。
-# 文件格式：**一行一把**（裸 32 字节 hex）。轮换期可同时放新旧两把，旧记录仍能验过。
-# 验不过的记录不会进内存表；启动日志里有 `rejected on load` 条数。
-# 灰度窗口（`credentials_require_signature = false`）下文件缺失/为空不阻断启动。
+# 灰度窗口：cred 还没配签名钥时设 false；文件里写了 `require_signature` 时以文件为准。
 {{#if credentials_require_signature}}require_signature = true
 {{else}}require_signature = false
-{{/if}}issuer_public_key_path = "/wist-center/ca/cred/issuer-signing.pub"
+{{/if}}
 
 # 本进程自己的运行日志（env_logger，走 log facade）。
 # 落文件（相对本配置目录解析 → 已挂载的 /wist-center/logs/，自动建父目录），写满自轮转。
