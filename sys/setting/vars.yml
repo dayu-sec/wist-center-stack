@@ -36,16 +36,16 @@ system:
   #   CENTER_IMAGE_TAG       wist-center 的 release tag
   #   CENTER_WEB_IMAGE_TAG   wist-center-web 的 release tag
   - name: CENTER_IMAGE_TAG
-    value: v0.30.0-alpha
+    value: v0.31.0-alpha
   - name: CENTER_WEB_IMAGE_TAG
-    value: v0.24.0-alpha
+    value: v0.25.0-alpha
   # 观测镜像 tag（源前缀见 VM_REGISTRY）
   - name: VM_IMAGE_TAG
     value: v1.154.0
 
   # Git Proxy 镜像（官方 nginx；固定小版本，定期跟随安全更新）。
   - name: GIT_PROXY_IMAGE_TAG
-    value: 1.27-alpine
+    value: 1.26-alpine
 
   # 中心生成「网关安装命令」时用的网关镜像（写进渲染出的 wist-center.toml 的 [artifacts] gateway_image）。
   # 现场按实际网关栈镜像覆盖；默认值与 wist-gateway-stack 当前钉的版本对齐。

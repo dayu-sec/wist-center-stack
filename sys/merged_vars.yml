@@ -8,13 +8,13 @@ system:
 - name: GIT_PROXY_REGISTRY
   value: docker.io/library
 - name: CENTER_IMAGE_TAG
-  value: v0.30.0-alpha
+  value: v0.31.0-alpha
 - name: CENTER_WEB_IMAGE_TAG
-  value: v0.24.0-alpha
+  value: v0.25.0-alpha
 - name: VM_IMAGE_TAG
   value: v1.154.0
 - name: GIT_PROXY_IMAGE_TAG
-  value: 1.27-alpine
+  value: 1.26-alpine
 - name: GATEWAY_IMAGE
   value: ghcr.io/dayu-sec/wist-gateway:v0.27.0-alpha
 - name: GATEWAY_PRJ_TPL_REPO

@@ -149,6 +149,8 @@ services:
       WIST_CENTER_CONFIG: /wist-center/wist-center.toml
       WIST_CENTER_PUB_CONFIG: /wist-center/ca/wist-center-pub.toml
       WIST_CENTER_SEC_FILE: /secrets/sec-value.yml
+      # 全栈版本（页面左下角展示）：直接读挂进来的 `version.txt`，不在环境里复制一份版本号。
+      WIST_CENTER_STACK_VERSION_FILE: /config/stack-version.txt
       WARP_INSIGHT_CENTER_SERVER_CERT_PATH: /wist-center/ca/control-center-server.crt
       WARP_INSIGHT_CENTER_SERVER_KEY_PATH: /wist-center/ca/control-center-server.key
     volumes:
@@ -157,6 +159,9 @@ services:
       - ${CENTER_CONFIG_DIR}/logs:/wist-center/logs
       - ./identity/center:/wist-center/ca:ro
       - ./.wist:/secrets:ro
+      # 全栈版本（展示用）：`version.txt` 是唯一真值，只读挂进容器；
+      # 镜像只是通道，不在镜像/环境变量里复制版本号（与 gateway-stack 同口径）。
+      - ./version.txt:/config/stack-version.txt:ro
       - ${CENTER_ARTIFACT_DIR}:/wist-center/artifacts
     ports:
       # 面分离：

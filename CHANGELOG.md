@@ -3,6 +3,22 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.11.1-alpha] - 2026-11-04
+
+### 组件跟版
+
+- `CENTER_IMAGE_TAG` → **`v0.31.0-alpha`**：`GET /api/v1/version` 新增可省的 `stack_version`
+  （部署版本），供页面左下角显示栈版本。
+- `CENTER_WEB_IMAGE_TAG` → **`v0.25.0-alpha`**：版本块变三行（前端 / 后端 / 栈）。
+- `GIT_PROXY_IMAGE_TAG` → **`1.26-alpine`**。
+
+### 新增
+
+- **页面左下角显示 center-stack 版本**：compose 把栈根的 `version.txt` 只读挂进 center 容器
+  （`/config/stack-version.txt`）并设 `WIST_CENTER_STACK_VERSION_FILE`；后端 `GET /api/v1/version`
+  多返回一个可省的 `stack_version`（与 gateway-stack 同口径：版本号只在 `version.txt` 里，
+  不在镜像 / 环境变量里复制一份）。前端版本块因此变成「前端 / 后端 / 栈」三行。
+
 ## [0.10.1-alpha] - 2026-11-03
 
 ### 组件跟版（中心 0.29：agent 指标名与标签对齐规范）
