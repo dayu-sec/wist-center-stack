@@ -3,6 +3,20 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.11.2-alpha] - 2026-11-04
+
+### 组件跟版
+
+- `CENTER_IMAGE_TAG` → **`v0.32.0-alpha`**：中心新增 `agent_host_info{agent,gateway_id,hostname,host_ip}`
+  序列（VM 侧不用先 join 网关就能回答「这台机器叫什么、是哪个地址」；`agent_info` 的 label 集合不变）；
+  并修非 root 主机跑网关安装命令时报 `bash: TOOL_DIR?: unbound variable`（变量紧邻全角括号未写 `${VAR}`）。
+- `CENTER_WEB_IMAGE_TAG` 不变（`v0.25.0-alpha`，前端本次无改动）。
+
+### 升级注意
+
+- 只换中心镜像：`gops prj upgrade -v 0.11.2-alpha`（或 `gops sys localize` + `gops run start`）后
+  确认 center 容器是 `v0.32.0-alpha`，`GET /api/v1/version` 的 `version` 应为 `0.32.0`。
+
 ## [0.11.1-alpha] - 2026-11-04
 
 ### 组件跟版
