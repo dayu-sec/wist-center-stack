@@ -3,6 +3,18 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.12.3-alpha] - 2026-11-05
+
+### 变更（默认值）
+
+- **`GIT_PROXY_REPO_PREFIX` 默认改为「自动」**：留空（默认）/ `auto` 时取两个规则仓的**公共上级目录**
+  （`…/wist/wp-rules` + `…/wist/wp-infra` → `/dy-sec/jingang-cust/wist`），该前缀下任意仓都放行 ——
+  于是部署工程模板、以后新增的仓**不用现场再配一次**（0.12.1/0.12.2 的「默认空」是错的：
+  升级成功但 `git clone` 仍 404，现场只能靠猜）。
+  - 不写死 `/dy-sec/jingang-cust/wist`：产品默认值不带客户组结构（`WP_RULES_REPO_URL` 本就是空）；
+  - 要恢复「只放行两个显式仓库」：`GIT_PROXY_REPO_PREFIX=off`；
+  - ⚠ 默认更宽：该前缀下所有仓对能连到代理的客户端可读，仍由 `GIT_PROXY_ALLOW_CIDR` / mTLS 把门。
+
 ## [0.12.2-alpha] - 2026-11-05
 
 ### 修复
