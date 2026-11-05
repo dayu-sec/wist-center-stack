@@ -79,8 +79,6 @@ system:
   value: ''
 - name: WP_INFRA_REPO_URL
   value: ''
-- name: WP_TPL_REPO_URL
-  value: ''
 - name: WP_GIT_BASE_URL
   value: ''
 - name: WP_GIT_PUSH_USER
@@ -92,6 +90,8 @@ system:
 - name: GIT_PROXY_ALLOW_CIDR
   value: ''
 - name: GIT_PROXY_SHORT_PREFIX
+  value: ''
+- name: GIT_PROXY_REPO_PREFIX
   value: ''
 - name: GIT_PROXY_PUBLIC_BASE
   value: ''

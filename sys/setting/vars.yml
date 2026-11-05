@@ -55,9 +55,6 @@ system:
   # （替代早先的 `gops prj new`）。工程自带 ops-prj.yml 与 values/wist-gateway-stack/sys_value.yml。
   # 写进渲染出的 wist-center.toml 的 [artifacts] gateway_project_repo；
   # 现场换仓库时在 ops-prj 的 values/<系统名>/sys_value.yml 覆盖本项，再 `gops sys localize`。
-  # **推荐写「本栈 Git Proxy 的短地址」**：`https://<GIT_PROXY_DOMAIN>:<GIT_PROXY_HOST_PORT>/gateway-tx.git`
-  # （443 可省端口），前提是同时配了 `WP_TPL_REPO_URL` —— 代理会把 `/gateway-tx.git` 补回上游真实路径，
-  # CNB 凭据只留在中心机，网关机不需要。直接写上游地址也可以（网关机需自有凭据）。
   # 需 wist-center ≥ 0.25.0-alpha（旧中心不认该键，仍用内置默认地址）。
   - name: GATEWAY_PRJ_TPL_REPO
     value: https://wgc-git.beta.jingang.cloud/gateway-tx.git
@@ -196,12 +193,6 @@ system:
     value: ''
   - name: WP_INFRA_REPO_URL
     value: ''
-  # **部署工程模板仓**（第三个白名单）：与上面两个仓必须同主机。配了它，Git Proxy 额外放行
-  #   `https://<本代理>/gateway-tx.git`（也收 `/gateway-tx`）并补回本仓真实路径，给中心的
-  #   `GATEWAY_PRJ_TPL_REPO` 用；上游仓名不必叫 gateway-tx（例如 .../dayu-sec/gateway-tx-01）。
-  #   留空 = 不提供模板仓（中心那个地址得网关机能直达）。
-  - name: WP_TPL_REPO_URL
-    value: ''
   - name: WP_GIT_BASE_URL
     value: ''
   - name: WP_GIT_PUSH_USER
@@ -222,6 +213,15 @@ system:
   #   → `<组>/<项目>`）；`off` = 不生成别名（只认完整路径）；
   #   也可显式写一个前缀（必须同时是两个仓库的前缀）。
   - name: GIT_PROXY_SHORT_PREFIX
+    value: ''
+
+  # **路径前缀映射**：配了它，前缀下**任意仓**都放行（仍只 info/refs / git-upload-pack / HEAD
+  #   三个只读端点），且 `/<仓>` 自动补成 `<前缀>/<仓>` —— 规则仓 / 基建仓 / 部署工程模板同在一个组时
+  #   最省事（例：`/dy-sec/jingang-cust/wist`，则 `/gateway-tx.git` → `…/wist/gateway-tx.git`）。
+  #   留空 = 只放行 WP_RULES_REPO_URL / WP_INFRA_REPO_URL 两个显式仓库。
+  #   ⚠ 代价：该前缀下**所有**仓都对能连到代理的客户端可读；用 GIT_PROXY_ALLOW_CIDR /
+  #     GIT_PROXY_CLIENT_CERT_VERIFY 把门（与旧行为同一套）。
+  - name: GIT_PROXY_REPO_PREFIX
     value: ''
 
   # Gateway 侧 wparse 的 Git 拉取基址（写进网关对接片段）。
