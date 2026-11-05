@@ -122,6 +122,14 @@ http {
             rewrite {{{git_proxy_short_rewrite}}}
         }
 
+        # 部署工程模板仓别名：`/gateway-tx[.git]` → 上游真实路径。
+        # 中心下发的 `GATEWAY_PRJ_TPL_REPO` 用这个短地址，网关机不需要知道 CNB 的组/项目路径；
+        # 上游叫不叫 gateway-tx 都行（映射在渲染值里，见 WP_TPL_REPO_URL）。
+        # {{{git_proxy_tpl_note}}}
+        location ~ ^{{{git_proxy_tpl_regex}}}/(info/refs|git-upload-pack|HEAD)$ {
+            rewrite {{{git_proxy_tpl_rewrite}}}
+        }
+
         # 其它路径一律拒绝：不做“带 CNB token 的通用反代”。
         location / {
             return 404;

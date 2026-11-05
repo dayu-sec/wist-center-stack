@@ -79,6 +79,8 @@ system:
   value: ''
 - name: WP_INFRA_REPO_URL
   value: ''
+- name: WP_TPL_REPO_URL
+  value: ''
 - name: WP_GIT_BASE_URL
   value: ''
 - name: WP_GIT_PUSH_USER

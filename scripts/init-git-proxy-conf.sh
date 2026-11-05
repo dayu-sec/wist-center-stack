@@ -15,6 +15,11 @@
 #   WP_RULES_REPO_URL               上游规则仓库（与 infra 必须同主机）
 #   WP_INFRA_REPO_URL               上游配置仓库
 #   WP_GIT_BASE_URL                 上游基址；留空 = 从仓库 URL 推导 `scheme://host[:port]`
+#   WP_TPL_REPO_URL                 **部署工程模板仓**（上游，与上两者必须同主机）。配了它，
+#                                   代理额外放行 `https://<本代理>/gateway-tx.git`（也收 `/gateway-tx`）
+#                                   并补回本仓真实路径 —— 中心下发的 `GATEWAY_PRJ_TPL_REPO`
+#                                   就用这个短地址，网关机不需要知道 CNB 的组/项目路径。
+#                                   留空 = 不提供模板仓（中心那个地址得另行可达）。
 #   WP_GIT_AUTH_HEADER              鉴权头名（默认 Authorization；Basic 口径）
 #   WP_GIT_PUB_USER                 读账号（可被 .wist 的 wp_git_pub_user 覆盖）
 #   GIT_PROXY_SHORT_PREFIX          短路径别名要补上的上游目录前缀：留空 = 自动取两个仓库的
@@ -53,6 +58,7 @@ GIT_PROXY_DOMAIN="${GIT_PROXY_DOMAIN:-}"
 API_WGC_DOMAIN="${API_WGC_DOMAIN:-}"
 SERVER_NAME="${GIT_PROXY_DOMAIN:-${API_WGC_DOMAIN}}"
 WP_GIT_BASE_URL="${WP_GIT_BASE_URL:-}"
+WP_TPL_REPO_URL="${WP_TPL_REPO_URL:-}"
 WP_GIT_AUTH_HEADER="${WP_GIT_AUTH_HEADER:-Authorization}"
 WP_GIT_PUB_USER="${WP_GIT_PUB_USER:-}"
 GIT_PROXY_SHORT_PREFIX="${GIT_PROXY_SHORT_PREFIX:-}"
@@ -111,7 +117,8 @@ python3 - "${tmp}" "${SERVER_NAME}" "${WP_GIT_BASE_URL}" "${WP_GIT_AUTH_HEADER}"
   "${WP_GIT_PUB_USER}" "${GIT_PUB_TOKEN}" \
   "${WP_RULES_REPO_URL:-}" "${WP_INFRA_REPO_URL:-}" \
   "${GIT_PROXY_SHORT_PREFIX}" \
-  "${GIT_PROXY_ALLOW_CIDR}" "${GIT_PROXY_CLIENT_CERT_VERIFY}" <<'PY'
+  "${GIT_PROXY_ALLOW_CIDR}" "${GIT_PROXY_CLIENT_CERT_VERIFY}" \
+  "${WP_TPL_REPO_URL}" <<'PY'
 import base64
 import json
 import re
@@ -130,7 +137,8 @@ from urllib.parse import urlparse
     short_prefix,
     allow_cidr,
     client_cert_mode,
-) = sys.argv[1:12]
+    tpl_url,
+) = sys.argv[1:13]
 
 # 从未命中的占位路径：两个仓库都没配时用它，保证 nginx 语法合法且拒绝一切请求。
 DISABLED_PATH = "/__git_proxy_disabled__"
@@ -177,6 +185,33 @@ for label, url in (("WP_RULES_REPO_URL", models_url), ("WP_INFRA_REPO_URL", infr
         raise SystemExit(f"{label} 不合法：{url!r}")
     configured.append((label, parsed))
 
+# 第三个白名单仓：部署工程模板仓（仅当主干能代理时才有意义）。
+# 为什么要它：中心的 `install-all` 会在网关机上 `git clone` 一个部署工程模板；
+# 以前它只能指公网/直连 CNB（需在网关机放 CNB 凭据），现在由代理补一条**固定别名**
+# `/gateway-tx.git` 映射到上游真实路径（上游叫不叫 gateway-tx 都行）。
+tpl_parsed = None
+if tpl_url:
+    parsed = urlparse(tpl_url)
+    if not parsed.hostname:
+        print(f"  ⚠ WP_TPL_REPO_URL 不合法，已忽略：{tpl_url!r}", file=sys.stderr)
+    elif not configured:
+        print(
+            "  ⚠ WP_TPL_REPO_URL 需要至少配一个规则仓（WP_RULES_REPO_URL / WP_INFRA_REPO_URL），已忽略",
+            file=sys.stderr,
+        )
+    elif parsed.hostname != configured[0][1].hostname:
+        print(
+            "  ⚠ WP_TPL_REPO_URL 与规则仓不在同一主机（Git Proxy 只反代一个上游），已忽略",
+            file=sys.stderr,
+        )
+    else:
+        tpl_parsed = parsed
+
+# 模板仓别名默认值（没配/被忽略时永不命中）。
+tpl_alias_regex = DISABLED_ALIAS_REGEX
+tpl_alias_rewrite = DISABLED_ALIAS_REWRITE
+tpl_alias_note = "模板仓别名未启用（未配 WP_TPL_REPO_URL）"
+
 if not configured:
     # 没配仓库：保留一台「拒一切」的 nginx（不阻断 localize —— 中心单独部署是合法形态，
     # 且产品默认值本来就是空）。这里必须说一句，否则现场只会看到网关拉不到规则。
@@ -208,6 +243,10 @@ else:
     all_paths = []
     for _, parsed in configured:
         all_paths.extend(repo_paths(parsed))
+    if tpl_parsed is not None:
+        # 模板仓只进**白名单**，不参于上面那个「公共上级目录」的推算：
+        # 它的组/项目路径与规则仓不同，参与进去会把现有 `/wp-rules` 别名改成 `/wist/wp-rules`。
+        all_paths.extend(repo_paths(tpl_parsed))
     repo_regex = "(?:" + "|".join(re.escape(p) for p in all_paths) + ")"
     models_path = next(
         (repo_paths(p)[0] for label, p in configured if label == "WP_RULES_REPO_URL"), ""
@@ -278,6 +317,23 @@ if configured and len(configured) == 1:
     missing = "WP_INFRA_REPO_URL" if configured[0][0] == "WP_RULES_REPO_URL" else "WP_RULES_REPO_URL"
     print(f"  ⚠ 只配置了一个仓库（缺 {missing}）：白名单只收已配置的那个", file=sys.stderr)
 
+if tpl_parsed is not None:
+    # 固定别名：`/gateway-tx[.git]` → 上游真实路径。
+    # 用固定名字而不是从上游仓名推导：上游叫什么（gateway-tx-01 之类）与中心下发的
+    # `GATEWAY_PRJ_TPL_REPO` 解耦，现场改仓不用同时改中心。
+    tpl_target = repo_paths(tpl_parsed)[1]  # 不带 .git 的规范路径
+    if not PATH_SAFE.fullmatch(tpl_target) or tpl_target in ("", "/"):
+        print(
+            f"  ⚠ WP_TPL_REPO_URL 路径不可用于别名，已关闭：{tpl_target!r}",
+            file=sys.stderr,
+        )
+        tpl_alias_note = "模板仓别名已关闭（上游路径含不安全字符）"
+    else:
+        tpl_alias_regex = r"(?:/gateway-tx\.git|/gateway-tx)"
+        tpl_alias_rewrite = "^/gateway-tx(?:\\.git)?(/.*)$ " + tpl_target + "$1 last;"
+        tpl_alias_note = "模板仓别名：/gateway-tx[.git] → " + tpl_target
+        print("  · " + tpl_alias_note)
+
 # ── 上游鉴权头 ──
 if not re.fullmatch(r"[A-Za-z0-9-]{1,64}", header_name):
     raise SystemExit(f"WP_GIT_AUTH_HEADER 不合法：{header_name!r}")
@@ -341,6 +397,9 @@ values = {
     "git_proxy_short_regex": short_regex,
     "git_proxy_short_rewrite": short_rewrite,
     "git_proxy_short_note": short_note,
+    "git_proxy_tpl_regex": tpl_alias_regex,
+    "git_proxy_tpl_rewrite": tpl_alias_rewrite,
+    "git_proxy_tpl_note": tpl_alias_note,
     "git_proxy_client_ca": client_ca_block,
     "git_proxy_client_mode": mode,
 }
