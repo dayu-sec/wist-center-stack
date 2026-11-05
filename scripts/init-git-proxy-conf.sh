@@ -121,7 +121,8 @@ python3 - "${tmp}" "${SERVER_NAME}" "${WP_GIT_BASE_URL}" "${WP_GIT_AUTH_HEADER}"
   "${WP_RULES_REPO_URL:-}" "${WP_INFRA_REPO_URL:-}" \
   "${GIT_PROXY_SHORT_PREFIX}" \
   "${GIT_PROXY_ALLOW_CIDR}" "${GIT_PROXY_CLIENT_CERT_VERIFY}" \
-  "${GIT_PROXY_REPO_PREFIX}" <<'PY'
+  "${GIT_PROXY_REPO_PREFIX}" \
+  "${GATEWAY_PRJ_TPL_REPO:-}" "${GIT_PROXY_HOST_PORT}" <<'PY'
 import base64
 import json
 import re
@@ -141,7 +142,9 @@ from urllib.parse import urlparse
     allow_cidr,
     client_cert_mode,
     repo_prefix,
-) = sys.argv[1:13]
+    tpl_repo,
+    proxy_port,
+) = sys.argv[1:15]
 
 # 从未命中的占位路径：两个仓库都没配时用它，保证 nginx 语法合法且拒绝一切请求。
 DISABLED_PATH = "/__git_proxy_disabled__"
@@ -187,6 +190,10 @@ for label, url in (("WP_RULES_REPO_URL", models_url), ("WP_INFRA_REPO_URL", infr
     if not parsed.hostname:
         raise SystemExit(f"{label} 不合法：{url!r}")
     configured.append((label, parsed))
+
+all_paths = []
+alias_paths = []
+effective_prefix = ""
 
 if not configured:
     # 没配仓库：保留一台「拒一切」的 nginx（不阻断 localize —— 中心单独部署是合法形态，
@@ -326,6 +333,7 @@ if prefix_mode:
         )
     else:
         # 前缀下的仓与目录一律允许（不含空白/引号/分号）；端点限制仍在模板的 location 上。
+        effective_prefix = pref
         repo_regex = re.escape(pref) + "/[A-Za-z0-9._~/-]+"
         short_regex = "/[A-Za-z0-9._~/-]+"
         short_rewrite = "^/(.*)$ " + pref + "/$1 last;"
@@ -397,6 +405,69 @@ else:
         f"        ssl_verify_client {mode};",
         "        ssl_verify_depth 2;",
     ])
+
+# ── 自检：中心下发的模板仓地址，本代理到底能不能提供 ──
+# 中心把它渲染进 `install-all` 脚本，网关机据此 `git clone`；指到本代理却不在白名单里
+# 就是必挂（404），而且现场要等到装网关时才看得见 —— 这里在 localize 阶段直接失败。
+raw_tpl = tpl_repo.strip()
+if raw_tpl:
+    parsed_tpl = urlparse(raw_tpl)
+    tpl_port = (
+        parsed_tpl.port
+        if parsed_tpl.port is not None
+        else (443 if parsed_tpl.scheme == "https" else 80)
+    )
+    if parsed_tpl.hostname == server_name and str(tpl_port) == str(proxy_port):
+        tpl_path = (parsed_tpl.path or "/").rstrip("/") or "/"
+        forms = {tpl_path}
+        if tpl_path.endswith(".git"):
+            forms.add(tpl_path[: -len(".git")])
+        else:
+            forms.add(tpl_path + ".git")
+        if effective_prefix:
+            # 前缀模式下两种写法都合法：完整路径（已带前缀）或短路径（别名会补前缀）。
+            # 不能一律算覆盖：`/wist/gateway-tx.git` 配上 `…/wist` 前缀会拼成 `…/wist/wist/…`，
+            # 这正是 2026-11-05 现场那个 404（多了层 `wist/`）—— 用「首段 == 前缀末段」识别。
+            if any(
+                form == effective_prefix or form.startswith(effective_prefix + "/")
+                for form in forms
+            ):
+                print("  · 模板仓走本代理（完整路径）：" + raw_tpl)
+            else:
+                first_seg = tpl_path.lstrip("/").split("/", 1)[0]
+                if first_seg.endswith(".git"):
+                    first_seg = first_seg[: -len(".git")]
+                prefix_tail = effective_prefix.rsplit("/", 1)[-1]
+                if first_seg == prefix_tail:
+                    raise SystemExit(
+                        "错误：GATEWAY_PRJ_TPL_REPO 看起来多写了一层前缀 —— "
+                        "代理会再补一次，拼出不存在的仓：\n"
+                        f"  GATEWAY_PRJ_TPL_REPO = {raw_tpl}\n"
+                        f"  前缀（GIT_PROXY_REPO_PREFIX）= {effective_prefix}\n"
+                        f"  实际会拉：{effective_prefix + tpl_path}\n"
+                        "改成短路径即可，例如 https://<wp-git>/gateway-tx.git"
+                    )
+                print(
+                    "  · 模板仓走本代理（短路径）："
+                    + raw_tpl
+                    + " → "
+                    + effective_prefix
+                    + tpl_path
+                )
+        else:
+            covered = bool(forms & set(all_paths)) or bool(forms & set(alias_paths))
+            if not covered:
+                covered_hint = "、".join(sorted(set(all_paths) | set(alias_paths)))
+                raise SystemExit(
+                    "错误：中心下发的模板仓地址指向本 Git Proxy，但白名单不覆盖它 —— "
+                    "网关机 `git clone` 必然 404：\n"
+                    f"  GATEWAY_PRJ_TPL_REPO = {raw_tpl}\n"
+                    f"  Git Proxy 只提供：{covered_hint}\n"
+                    "两种改法：\n"
+                    "  · 给 GIT_PROXY_REPO_PREFIX 开前缀映射（默认自动 = 两个规则仓的公共上级目录）；\n"
+                    "  · 或把 GATEWAY_PRJ_TPL_REPO 改成白名单里的完整路径。"
+                )
+            print("  · 模板仓走本代理（白名单内）：" + raw_tpl)
 
 values = {
     "git_proxy_server_name": server_name,
