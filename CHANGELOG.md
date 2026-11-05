@@ -3,6 +3,25 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.12.0-alpha] - 2026-11-05
+
+### 新增
+
+- **Git Proxy 第三个白名单仓：部署工程模板**（`WP_TPL_REPO_URL`）。中心从 0.25 起让网关安装脚本
+  `git clone` 一个部署工程模板，但代理之前只放行「规则仓 / 基建仓」，
+  `https://wp-git.<域名>/gateway-tx.git` 一律 404（TLS 通了也拉不到）。
+  现在配了 `WP_TPL_REPO_URL`（与另两个仓必须同主机）后，代理额外放行 `/gateway-tx.git`（也收
+  `/gateway-tx`）并补回上游真实路径 —— **上游仓名不必叫 gateway-tx**（例如
+  `…/dayu-sec/gateway-tx-01`），于是 `GATEWAY_PRJ_TPL_REPO` 可以写代理短地址，CNB 凭据只留在中心机。
+  - 现成的两个短别名（`/wp-rules`、`/wp-infra-alpha`）不受影响：模板仓不参与「公共上级目录」推算；
+  - 留空 = 行为与之前完全一致（不提供模板仓）。
+
+### 升级注意
+
+- 走代理需同时把 `GATEWAY_PRJ_TPL_REPO` 指向 `https://<GIT_PROXY_DOMAIN>/gateway-tx.git`（443 可省端口）；
+  升级后 `gops sys localize` 重建 `configs/git-proxy/nginx.conf`，`gops run start` 重建 git-proxy 容器，
+  再用 `git ls-remote https://<wp-git>/gateway-tx.git` 确认白名单生效。
+
 ## [0.11.4-alpha] - 2026-11-05
 
 ### 组件跟版
