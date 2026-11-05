@@ -3,6 +3,19 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.12.1-alpha] - 2026-11-05
+
+### 变更（取代 0.12.0 的「第三个白名单仓」）
+
+- **Git Proxy 改为「路径前缀映射」**（`GIT_PROXY_REPO_PREFIX`）：配了它，前缀下**任意仓**都放行
+  （仍只 `info/refs` / `git-upload-pack` / `HEAD` 三个只读端点），且 `/<仓>` 自动补成 `<前缀>/<仓>`。
+  例：`GIT_PROXY_REPO_PREFIX=/dy-sec/jingang-cust/wist` → `/gateway-tx.git` 实际拉到
+  `/dy-sec/jingang-cust/wist/gateway-tx.git`。新增仓（如部署工程模板）不用再改代理配置。
+  - 留空该变量 = 旧行为（只放行 `WP_RULES_REPO_URL` / `WP_INFRA_REPO_URL` 两个显式仓库）；
+  - ⚠ 代价：前缀下**所有**仓对能连到代理的客户端可读，仍由 `GIT_PROXY_ALLOW_CIDR` /
+    `GIT_PROXY_CLIENT_CERT_VERIFY` 把门；
+  - `0.12.0` 的 `WP_TPL_REPO_URL` / 固定别名 `/gateway-tx` 已撤回（未在任何环境部署过）。
+
 ## [0.12.0-alpha] - 2026-11-05
 
 ### 新增
