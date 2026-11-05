@@ -35,6 +35,8 @@ RUN=0
 need() { command -v "$1" >/dev/null 2>&1 || { echo "缺 $1" >&2; exit 1; }; }
 log() { printf '\033[1;36m==> %s\033[0m\n' "$*"; }
 ok() { printf '   \033[32m✓\033[0m %s\n' "$*"; }
+# 只提醒、不判定：用于「需要运营决策」的状态。绝不会把 e2e 判成失败。
+warn() { printf '   \033[33m!\033[0m %s\n' "$*"; }
 bad() { printf '   \033[31m✗\033[0m %s\n' "$*"; FAILED=1; }
 FAILED=0
 
@@ -60,6 +62,35 @@ except Exception:
 err = doc.get("error") or {}
 print(err.get("code", "?"), "-", err.get("message", ""))
 '
+}
+
+# 「有新包但没登记」：只提醒、不判定（放在所有关键断言之后，不拖慢主链路）。
+#
+# 新网关版本要不要下发给现场是**运营决策**，而且一个中心一份登记表、各自的 admin token
+# （中心会部署多个实例）—— 所以任何 CI/自动流程都**无权**替运营「采纳」新版。
+# 但「有包没登记」不能靠人记得去查：2026-11-05 就是这样 —— gateway-stack 0.8.37/0.8.38/
+# 0.8.39 都已构建并传到对象存储，中心登记表还停在 0.8.36，install-all 一直在发旧包，
+# 而当时所有检查都是绿的。中心的 package-sources/latest 本来就能算这件事
+# （up_to_date / imported），这里只是把它从「页面上的一个开关」变成「每天打印一行」。
+check_newer_release() {
+  local component="$1" body version
+  # 这个端点在 COS 上从基准版本往后探候选（实测 30~42s），超时给得宽一点。
+  if ! body=$(curl -skS --max-time 90 \
+    -H "Authorization: Bearer ${TOKEN}" \
+    "${ADMIN}/api/v1/admin/package-sources/latest?component=${component}&source=cos" 2>/dev/null); then
+    warn "${component} 的新版本探测超时/不可达，已跳过（不影响结论）"
+    return 0
+  fi
+  # 没配来源 / 上游报错 —— 都不是安装链路的问题，不能因此判红。
+  if contains "$body" '"error"'; then
+    return 0
+  fi
+  if contains "$body" '"up_to_date":true'; then
+    ok "${component} 已登记到最新版本"
+    return 0
+  fi
+  version=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("version", ""))' <<<"$body" 2>/dev/null || true)
+  warn "${component} 有新版本可采纳：${version:-?}（未登记 → install-all 仍在发旧包；录不录由运营决定）"
 }
 
 while [ $# -gt 0 ]; do
@@ -284,5 +315,9 @@ REMOTE
 fi
 
 log "完成"
+
+# 有新版可采纳？—— 纯提醒，不影响退出码（决策权在运营）。
+[ -n "${TOKEN:-}" ] && check_newer_release wist-gateway-stack
+
 [ "$FAILED" = 0 ] || { echo "有失败项（见上面的 ✗）" >&2; exit 1; }
 echo "全部检查通过。"
