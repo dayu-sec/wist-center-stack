@@ -3,6 +3,16 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.12.11-alpha] - 2026-11-05
+
+### 组件跟版
+
+- `CENTER_IMAGE_TAG` → **`v0.33.3-alpha`**：发布列表的兼容性检查改为按**整个纳管面**算
+  （本机 `wist-center` + 各网关上报的 `wist-gateway` / `wist-gwlinkd` 最低版本），
+  `wist-gwlinkd` 不再是「未知」—— 之前每个 gateway-stack 包都挂一条永远消不掉的告警，
+  而中心其实已经从 status 上报里拿到了 gwlinkd 版本。
+- `CENTER_WEB_IMAGE_TAG` 不变（`v0.25.0-alpha`）：页面只是渲染后端给的 `compatibility`，无需改。
+
 ## [0.12.10-alpha] - 2026-11-05
 
 ### 变更
