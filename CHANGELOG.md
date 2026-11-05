@@ -3,6 +3,39 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.12.5-alpha] - 2026-11-05
+
+### 组件跟版
+
+- `CENTER_IMAGE_TAG` → **`v0.33.2-alpha`**：网关安装脚本改为 **gops 直接回源取 gateway-stack 包**
+  （CA 已由脚本落进系统信任库/钥匙串），`ops-prj.yml` 的 `addr` 天然是 `{version}` 热地址 ——
+  不会再被记成本地临时路径。
+- `CENTER_WEB_IMAGE_TAG` 不变（`v0.25.0-alpha`）。
+
+### 新增：栈级本地门禁（`check-stack.sh --gate`）
+
+之前的 `--gate` 只有 stackcheck（Rust）的**配置语法**判断；2026-11-05 一天 6 次现场事故里
+5 次是**部署事实不一致**，语法检查全绿。现在 `--gate` 额外跑 `scripts/lib/local-gates.sh`：
+
+- `secrets.declared` / `secrets.mode` / `secrets.group`：有 `.wist/sec-value.yml` 就必须声明
+  `secrets:`，且权限/属组与容器 gid 一致（否则 `gops sec` 静默回退旧路径）；
+- `render.applied`：渲染产物比容器启动时间新 → 提醒“配置改了但进程没重载”；
+- `port.owner`：`port.available` 失败时直接列出**占用者容器名**，不用现场再猜。
+
+### 新增：安装链路 e2e（`dev/e2e-install.sh`）
+
+向中心要 prepare / install 脚本 → `bash -n` + 关键断言（回源取包 / `GIT_SSL_CAINFO` /
+系统信任库落地）→ 验 Git Proxy 真能 `ls-remote` 模板仓；`--ssh ... --run` 还能在目标机
+真装并断言（`gops sec` 非空 / `ops-prj.yml` 地址可跟版 / gwlinkd 已接入）。CI 可只跑默认的
+只读模式。
+
+### 升级注意
+
+- 只换中心镜像（`gops prj upgrade -v 0.12.5-alpha`）。
+- 已经装坏 addr 的工桋工程：把 `ops-prj.yml` 的 `addr` 改成
+  `url: <中心>/api/v1/releases/artifact/wist-gateway-stack/v{version}/wist-gateway-stack-v{version}.tar.gz`
+  即可继续升级，不用重装。
+
 ## [0.12.4-alpha] - 2026-11-05
 
 ### 新增
