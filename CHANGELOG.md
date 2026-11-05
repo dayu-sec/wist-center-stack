@@ -3,6 +3,24 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.11.4-alpha] - 2026-11-05
+
+### 组件跟版
+
+- `CENTER_IMAGE_TAG` → **`v0.33.0-alpha`**（含两个安装链路修复）：
+  - 全新安装不再挂在 `git clone`：`SSL_CERT_FILE` 对 GnuTLS 后端的 git 无效，已补 `GIT_SSL_CAINFO`
+    （上一版 0.32.2）；
+  - **中心 CA 落系统信任库**：`prepare-script` / `install-all` 会把 CA 装进
+    `/usr/local/share/ca-certificates`（Debian）或 `/etc/pki/ca-trust/source/anchors`（RHEL），
+    之后宿主上的 git / curl / docker / gops 直接信任这套中心，不用再摆弄环境变量。
+- `CENTER_WEB_IMAGE_TAG` 不变（`v0.25.0-alpha`）。
+
+### 升级注意
+
+- `gops prj upgrade -v 0.11.4-alpha` 后重新生成网关安装命令：全新机器先跑环境准备
+  （会把 CA 装进系统信任库），再跑安装。
+- 不想动系统信任库：环境准备时加 `WIST_TRUST_CENTER_CA=0`。
+
 ## [0.11.3-alpha] - 2026-11-04
 
 ### 组件跟版
