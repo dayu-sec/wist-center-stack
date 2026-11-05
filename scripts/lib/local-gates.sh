@@ -17,7 +17,10 @@
 #   GATE_RENDER_FILES  渲染产物清单（相对栈根），用于 `render.applied`
 #   GATE_EXTRA_GATES   可选的额外函数名，跑完通用门禁后调用（如 `gate_ops_prj_addr`）
 
+# 这两个标志由 check-stack.sh source 之后读取（本文件只写不读）
+# shellcheck disable=SC2034
 GATE_FAIL=0
+# shellcheck disable=SC2034
 GATE_WARN=0
 
 gate_fail() {
@@ -66,7 +69,8 @@ gate_project_name() {
 # ① 密钥文件 ↔ sys-prj.yml 声明（这就是 2026-11-05「gops sec 找不到密钥」的结构性根因：
 #    横切配置和功能挤在一个提交里，revert 把它带走了，而没有任何检查发现）
 gate_secrets() {
-  local root="$1" prj="$root/sys-prj.yml" sec="$root/.wist/sec-value.yml"
+  local root="$1"
+  local prj="$root/sys-prj.yml" sec="$root/.wist/sec-value.yml"
   [ -f "$sec" ] || return 0
   if ! grep -qE '^secrets:' "$prj" 2>/dev/null; then
     gate_fail "secrets.declared" \
@@ -134,7 +138,7 @@ gate_render_applied() {
 gate_port_owners() {
   local root="$1"
   command -v docker >/dev/null 2>&1 || return 0
-  local compose="$root/sys/docker-compose.yml" proj out
+  local compose="$root/sys/docker-compose.yml" proj
   [ -f "$compose" ] || return 0
   if [ -n "${GATE_STACKCHECK_OUT:-}" ] && [ -f "$GATE_STACKCHECK_OUT" ]; then
     grep -qE '^\[FAIL\][[:space:]]*port\.available' "$GATE_STACKCHECK_OUT" 2>/dev/null || return 0
