@@ -3,6 +3,13 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.12.6-alpha] - 2026-11-05
+
+### 修复
+
+- `scripts/lib/local-gates.sh` 的 shellcheck 告警（SC2034 / SC2318 / 未用变量）：与 gateway-stack
+  的同名文件保持逐字一致（两边都是 `-S warning` 零告警）。
+
 ## [0.12.5-alpha] - 2026-11-05
 
 ### 组件跟版
