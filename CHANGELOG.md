@@ -3,6 +3,20 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.12.4-alpha] - 2026-11-05
+
+### 新增
+
+- **localize 自检：中心下发的模板仓地址本代理能不能提供**。中心把 `GATEWAY_PRJ_TPL_REPO` 渲染进
+  `install-all`，网关机据此 `git clone`；指到本代理却拉不到就是必然 404（2026-11-05 现场：升级成功、
+  装网关才挂在 `repository not found`）。现在在 `init-git-proxy-conf.sh` 阶段就拦：
+  - 短路径 `…/gateway-tx.git` → 提示实际会拉的上游路径（`<前缀>/gateway-tx.git`）；
+  - 完整路径（已带前缀）→ 直接放行；
+  - **多写了一层前缀**（如 `/wist/gateway-tx.git` + 前缀 `…/wist` → `…/wist/wist/…`）→ **报错并终止**，
+    并打印实际会拼出的路径；
+  - `GIT_PROXY_REPO_PREFIX=off`（只放行显式仓库）时，不在白名单里 → **报错并终止**；
+  - 指向别的域名（直连 CNB / GitHub）→ 不检查（合法形态）。
+
 ## [0.12.3-alpha] - 2026-11-05
 
 ### 变更（默认值）
