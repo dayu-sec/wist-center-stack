@@ -3,6 +3,38 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.12.8-alpha] - 2026-11-05
+
+### 修复
+
+- **安装链路 e2e 自己会误报**（而且是**时好时坏**）：断言写成了
+  `printf '%s' "$script" | grep -q '...'`，`grep -q` 命中后立刻退出，上游 `printf`
+  收到 SIGPIPE(141)，`set -o pipefail` 让整条管道判失败 → `if` 走进 else。
+  同一份脚本两次运行会分别报「缺 GIT_SSL_CAINFO」和「没有系统信任库落地」，
+  而这两行其实都在。改成内建 `case` 的子串匹配（不再经管道），并用 herestring
+  取 URL / 版本号，彻底消掉这类竞态。
+- **e2e 的临时网关 id 会撞车**：`e2e-<秒>` 在同一秒内并发（或归档后重跑）会命中
+  `gateway_already_exists`。改成 `时间戳 + pid + 随机数`，并对 409 重试一次。
+
+### 变更
+
+- **e2e 默认零副作用**：不给 `--gateway` 时临时建一台 `e2e-*` 网关取安装材料，
+  结束时归档；只有显式 `--gateway <id>` 才轮换现场那台的接入券。此前默认行为是
+  直接轮换现网接入券，会让运维手里那张券突然失效。
+- **e2e 新增两条断言**（对应现场真实事故）：
+  - install 命令的 URL 必须是 `install-all` 端点（抽错 URL 时前几条断言照样绿）；
+  - 中心下发的**栈包真的能取到**（HTTP 200/206）—— 版本没录进中心 / 包没推完这类
+    「装到一半才 404」的问题提前到 CI。
+
+### 新增
+
+- **`dev/lint.sh`** + `.github/workflows/scripts.yml`：center-stack 之前没有静态检查，
+  改脚本全靠 CI 事后发现 shellcheck 告警（本轮又踩了一次）。命令与 gateway-stack 的
+  `dev/lint.sh` 逐字一致（`-S warning` + `SC2006`），顺手清掉 5 处存量告警。
+- **安装链路 e2e 进 CI**：push（main/beta/alpha）+ PR + **每日巡检**跑 `--contract`；
+  没配 `vars.E2E_CENTER_URL` 时自动跳过。每日跑是因为「装不上」多半是现场状态漂了，
+  只跑 push 触发永远看不见。
+
 ## [0.12.7-alpha] - 2026-11-05
 
 ### 修复
