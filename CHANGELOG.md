@@ -3,6 +3,17 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.12.7-alpha] - 2026-11-05
+
+### 修复
+
+- **门禁的退出码约定搞错，导致 localize 每次回滚**：`--gate` 的契约是「只按阻断类 FAIL 判定、
+  WARN 返回 0」，而 0.12.5/0.12.6 在 WARN 时返回 1 —— `gx.cmd` 把任何非零当失败，
+  于是 `gops prj upgrade` 走到 regenerate 就回滚（现场 2026-11-05 16:42 那次）。现在改成
+  「FAIL 或 stackcheck 自身退出码 2 → 2；否则 0」。
+- `GATE_RENDER_FILES` / `GATE_EXTRA_GATES` 改为 `export`（由 source 进来的库消费，shellcheck
+  不再当作未使用变量）。
+
 ## [0.12.6-alpha] - 2026-11-05
 
 ### 修复
