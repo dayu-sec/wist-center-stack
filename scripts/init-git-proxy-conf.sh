@@ -21,11 +21,14 @@
 #                                   公共上级目录（`.../<组>/<项目>/wp-*` → `<组>/<项目>`，
 #                                   于是 Gateway 侧可以只写 `/wp-infra`）；
 #                                   `off` = 不生成别名；也可显式写一个前缀（必须同时是两个仓库的前缀）。
-#   GIT_PROXY_REPO_PREFIX           **路径前缀映射**：配了它，前缀下**任意仓**都放行
-#                                   （仍只 info/refs / git-upload-pack / HEAD 三个只读端点），
-#                                   且 `/<仓>` 自动补成 `<前缀>/<仓>`。规则仓 / 基建仓 /
-#                                   部署工程模板同在一个组时最省事，新增仓不用再改代理配置。
-#                                   留空 = 只放行上面两个显式仓库（旧行为）。
+#   GIT_PROXY_REPO_PREFIX           **路径前缀映射**：留空（默认）/ `auto` = 取两个规则仓的
+#                                   **公共上级目录**（如 `/dy-sec/jingang-cust/wist`），该前缀下
+#                                   任意仓都放行（仍只 info/refs / git-upload-pack / HEAD 三个
+#                                   只读端点），且 `/<仓>` 自动补成 `<前缀>/<仓>`。
+#                                   部署工程模板、后新增的仓都不用再改代理配置。
+#                                   写具体路径 = 用这个前缀；`off` = 只放行两个显式仓库（旧行为）。
+#                                   ⚠ 前缀下所有仓都对能连到代理的客户端可读，用
+#                                     GIT_PROXY_ALLOW_CIDR / GIT_PROXY_CLIENT_CERT_VERIFY 把门。
 #   GIT_PROXY_ALLOW_CIDR            可选来源 IP allowlist（逗号分隔；空 = 不限）
 #   GIT_PROXY_CLIENT_CERT_VERIFY   双向证书：off | optional | on（默认 off）
 #   密钥 wp_git_pub_token / wp_git_pub_user：来自 `.wist/sec-value.yml`（只读，不生成不补键）
@@ -292,7 +295,21 @@ if configured and len(configured) == 1:
 # 新增仓不用再动代理配置。代价：该前缀下**所有**仓都对「能连到代理的客户端」可读 ——
 # 仍由 GIT_PROXY_ALLOW_CIDR 与 GIT_PROXY_CLIENT_CERT_VERIFY 把门。
 raw_repo_prefix = repo_prefix.strip()
-prefix_mode = bool(raw_repo_prefix) and raw_repo_prefix.lower() not in ("off", "none", "disable")
+keyword = raw_repo_prefix.lower()
+# 默认（留空 / auto）= 用两个规则仓的**公共上级目录**（与短别名同一口径）。
+# 为什么不写死一个客户路径：产品默认连 WP_RULES_REPO_URL 都是空的，把 `/dy-sec/...` 烘进默认值
+# 等于把一个客户的组结构写成产品行为。为什么不能默认关：模板仓、新增仓都得现场再配一次，
+# 而升级本身不会打开它（2026-11-05 现场就是这样：升级成功但 git clone 仍 404）。
+# 要恢复到「只放行两个显式仓库」：GIT_PROXY_REPO_PREFIX=off。
+auto_mode = keyword in ("", "auto")
+auto_prefix = common_dir_prefix([repo_paths(p)[1] for _, p in configured]) if configured else ""
+if keyword in ("off", "none", "disable"):
+    prefix_mode = False
+elif auto_mode:
+    prefix_mode = bool(auto_prefix)
+    raw_repo_prefix = auto_prefix
+else:
+    prefix_mode = True
 if prefix_mode and not configured:
     print(
         "  ⚠ GIT_PROXY_REPO_PREFIX 需要至少配一个仓库（用于推导上游主机），已忽略",
@@ -312,7 +329,12 @@ if prefix_mode:
         repo_regex = re.escape(pref) + "/[A-Za-z0-9._~/-]+"
         short_regex = "/[A-Za-z0-9._~/-]+"
         short_rewrite = "^/(.*)$ " + pref + "/$1 last;"
-        short_note = "前缀映射：/<仓> → " + pref + "/<仓>（该前缀下所有仓可读，端点仍只有三个）"
+        short_note = (
+            ("前缀映射（默认：两个规则仓的公共上级目录）" if auto_mode else "前缀映射")
+            + "：/<仓> → "
+            + pref
+            + "/<仓> —— 该前缀下所有仓可读，要收窄设 GIT_PROXY_REPO_PREFIX=off"
+        )
         print("  · " + short_note)
         outside = [
             repo_paths(parsed)[1]

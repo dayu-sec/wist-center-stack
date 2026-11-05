@@ -215,11 +215,13 @@ system:
   - name: GIT_PROXY_SHORT_PREFIX
     value: ''
 
-  # **路径前缀映射**：配了它，前缀下**任意仓**都放行（仍只 info/refs / git-upload-pack / HEAD
-  #   三个只读端点），且 `/<仓>` 自动补成 `<前缀>/<仓>` —— 规则仓 / 基建仓 / 部署工程模板同在一个组时
-  #   最省事（例：`/dy-sec/jingang-cust/wist`，则 `/gateway-tx.git` → `…/wist/gateway-tx.git`）。
-  #   留空 = 只放行 WP_RULES_REPO_URL / WP_INFRA_REPO_URL 两个显式仓库。
-  #   ⚠ 代价：该前缀下**所有**仓都对能连到代理的客户端可读；用 GIT_PROXY_ALLOW_CIDR /
+  # **路径前缀映射**（默认开启）：前缀下**任意仓**都放行（仍只 info/refs / git-upload-pack /
+  #   HEAD 三个只读端点），且 `/<仓>` 自动补成 `<前缀>/<仓>` —— 部署工程模板、后新增的仓都不用再
+  #   改代理配置。
+  #   留空 / `auto`（默认）= 取两个规则仓的**公共上级目录**（如 `…/wist/wp-rules` +
+  #     `…/wist/wp-infra` → `/dy-sec/jingang-cust/wist`）；写具体路径 = 用该前缀；
+  #     `off` = 只放行 WP_RULES_REPO_URL / WP_INFRA_REPO_URL 两个显式仓库（旧行为）。
+  #   ⚠ 前缀下**所有**仓都对能连到代理的客户端可读；用 GIT_PROXY_ALLOW_CIDR /
   #     GIT_PROXY_CLIENT_CERT_VERIFY 把门（与旧行为同一套）。
   - name: GIT_PROXY_REPO_PREFIX
     value: ''
