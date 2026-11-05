@@ -6,13 +6,19 @@ on:
     paths: ["scripts/**", "dev/**", "sys/**", ".github/workflows/scripts.yml"]
   pull_request:
     paths: ["scripts/**", "dev/**", "sys/**", ".github/workflows/scripts.yml"]
-  # 每日巡检：装不上通常是「现场状态漂了」，不是代码变了 —— 只跑 push 触发永远看不见。
-  schedule:
-    - cron: "17 1 * * *"
 
 permissions:
   contents: read
 
+# 只做**仓库自己的事实**：脚本能不能过静态检查。
+#
+# 安装链路 e2e（`dev/e2e-install.sh`）**故意不在这里跑**：它要一个真实中心的地址、
+# 管理面地址和 admin token，还要往那个中心的登记表/网关列表里动东西 —— 那些是**部署态信息**，
+# 不是仓库的属性。而且中心会部署多个实例、各有一份登记表和自己的运营，仓库 CI 没有立场
+# 代表其中任何一个。所以 e2e 由运维/发布在目标环境上手动跑：
+#
+#   dev/e2e-install.sh --center <网关面地址> --admin <管理面地址> \
+#       --token-from-gops <中心栈目录>        # 在中心机上跑，从密钥文件取 token，不落盘
 jobs:
   shellcheck:
     name: Shellcheck scripts
@@ -22,31 +28,3 @@ jobs:
       - name: Ensure shellcheck
         run: command -v shellcheck >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y shellcheck)
       - run: ./dev/lint.sh
-
-  # 安装链路 e2e：**没有配置目标中心就整体跳过**（配了却跑不通才算失败）。
-  # 默认 `--contract` 只读模式：取 prepare/install 脚本做断言 + 真去 `ls-remote` 模板仓 +
-  # 真去取一次栈包；安装材料用**临时网关**（结束时归档），不碰现场任何一台的接入券。
-  #   仓库 Variables：E2E_CENTER_URL（网关面，如 https://center.example）
-  #                    E2E_ADMIN_URL（管理面，如 https://wgc.example:8443；面不分离时可留空）
-  #   仓库 Secrets：  E2E_ADMIN_TOKEN（中心 `center_admin_token`）
-  install-e2e:
-    name: Install chain e2e
-    if: ${{ vars.E2E_CENTER_URL != '' }}
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - name: Run install e2e (contract)
-        env:
-          E2E_CENTER_URL: ${{ vars.E2E_CENTER_URL }}
-          E2E_ADMIN_URL: ${{ vars.E2E_ADMIN_URL }}
-          E2E_ADMIN_TOKEN: ${{ secrets.E2E_ADMIN_TOKEN }}
-        run: |
-          set -eu
-          [ -n "${E2E_ADMIN_TOKEN}" ] || {
-            echo "::error::缺 secrets.E2E_ADMIN_TOKEN（在中心机上取：gops sec get center_admin_token --show）"
-            exit 1
-          }
-          dev/e2e-install.sh \
-            --center "${E2E_CENTER_URL}" \
-            --admin "${E2E_ADMIN_URL:-$E2E_CENTER_URL}" \
-            --token "${E2E_ADMIN_TOKEN}"
