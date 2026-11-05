@@ -330,7 +330,8 @@ printf '%s\n' "${IMAGES}" | while IFS= read -r img; do
   fi
   base="${name##*/}"
 
-  # 排除 wist*（未加引号 = 让 glob 生效）
+  # 排除 wist*（`${EXCLUDE_GLOB}` 要保持 glob 语义，故意不加引号）
+  # shellcheck disable=SC2254  # 这里就是要让模式展开，加了引号会永远匹配不到
   case "${base}" in
     ${EXCLUDE_GLOB}) continue ;;
   esac

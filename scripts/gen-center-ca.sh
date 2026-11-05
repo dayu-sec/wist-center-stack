@@ -23,8 +23,6 @@
 # server_tls_required=true 下网关访问 init_url 的 TLS 握手会失败。
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # 默认输出到站点身份目录 identity/center（dev/prod 共用、整体作对外契约）；可用绝对路径覆盖。
 OUT_DIR="${1:-identity/center}"
 # 默认与 WARP_INSIGHT_CENTER_PUBLIC_URL 默认值（https://center.warpinsight.example）对齐

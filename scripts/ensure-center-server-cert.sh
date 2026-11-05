@@ -14,8 +14,6 @@
 # 环境：DAYS（**叶证书**有效期天数，默认 397 —— Apple 平台校验器要求 TLS 服务器证书 ≤ 398 天）
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 DIR="${1:-identity/center}"
 DOMAIN="${2:-}"
 EXTRA="${3:-}"

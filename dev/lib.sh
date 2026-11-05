@@ -553,8 +553,10 @@ start_web() {
 
   echo "== 启动 wist-center-web（${WEB_URL}）=="
   (
-    cd "${WEB_DIR}"
-    export WARP_INSIGHT_WEB_PROXY_TARGET="${CENTER_SCHEME}://$(center_loopback_host):${CENTER_PORT}"
+    cd "${WEB_DIR}" || exit 1
+    local proxy_target
+    proxy_target="${CENTER_SCHEME}://$(center_loopback_host):${CENTER_PORT}"
+    export WARP_INSIGHT_WEB_PROXY_TARGET="${proxy_target}"
     # 中心 admin token 的**已解析**值（密钥文件里那份）：交给 vite 代理补 Authorization，
     # 免得它去读配置里剩下的 `${SEC_CENTER_ADMIN_TOKEN}` 占位符、把占位符当 token 发出去。
     # 若拿不到真值（回落到占位符/空）→ 不注入，让页面手填。
