@@ -3,6 +3,27 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.12.12-alpha] - 2026-11-09
+
+### 修复
+
+- **升级不再被自己的门禁误判回滚**（与 `wist-gateway-stack` 0.10.13 同一套根因）：
+  - **本地门禁不再自己推导容器 gid**：`secrets.mode` / 属组判据从 `scripts/lib/local-gates.sh` 移除，
+    只保留 `secrets.declared`（配置形状）。容器身份只能由 gops 从 `docker compose config` 派生 ——
+    旧写法（`grep 'user:' | head -1`）遇到 compose 里新增的 root 初始化服务就会把 gid 算成 0。
+  - **`scripts/check-stack.sh` 的 `--only <前缀>` 现在也传给本地门禁**：`flow localize` 在 ⓿ 用
+    `--gate --only prereq`，那一刻 `gops sys perms --apply`（第 ⑥ 步）还没生产权限状态。
+    注意 `--only` 只认**空格**形式，`--only=prereq` 会让 stackcheck 以 exit 2 退出。
+
+### 新增
+
+- `dev/tests/local-gates.test.sh`：钉住上述职责边界与 `--only` 过滤（`dev/lint.sh` 已收录 `dev/tests/`）。
+- CI 增加 shell 回归测试 job（`.github/workflows/scripts.yml`）。
+
+### 升级注意
+
+- 本栈对 gops 的要求不变（`localize` 里的内联判据仍是 **≥ 2.9**，那是密钥属组共享的起点）。
+
 ## [0.12.11-alpha] - 2026-11-05
 
 ### 组件跟版
