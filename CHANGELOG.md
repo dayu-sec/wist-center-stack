@@ -3,6 +3,18 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.13.0-alpha] - 2026-11-09
+
+### 变更
+
+- `CENTER_IMAGE_TAG` → `v0.34.0-alpha`，`CENTER_WEB_IMAGE_TAG` → `v0.26.0-alpha`：
+  中心落库/读口 Agent 数据清单，页面展示「采集授权 / 调查数据」并提供「立即刷新」。
+
+### 兼容性
+
+- center 与 center-web **必须同批**：新前端的「立即刷新」依赖中心 ≥ 0.34.0 的
+  `/api/v1/admin/gateways/{id}/agents/refresh`；只升前端会 404。
+
 ## [0.12.12-alpha] - 2026-11-09
 
 ### 修复
