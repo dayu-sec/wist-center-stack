@@ -3,6 +3,17 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.13.2-alpha] - 2026-11-09
+
+### 变更
+
+- `CENTER_WEB_IMAGE_TAG` → `v0.27.0-alpha`：新增 Agent 详情页；Agent 卡片改成「摘要 + 资源
+  迷你趋势」，明细全部移进详情页。`CENTER_IMAGE_TAG` 不变（`v0.34.1-alpha`）。
+
+### 兼容性
+
+- 纯前端改动，不依赖新后端接口；工具链与 0.13.1 相同。
+
 ## [0.13.1-alpha] - 2026-11-09
 
 ### 修复
