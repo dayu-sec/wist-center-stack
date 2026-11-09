@@ -3,6 +3,15 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.13.1-alpha] - 2026-11-09
+
+### 修复
+
+- `CENTER_IMAGE_TAG` → `v0.34.1-alpha`：修 `agent 状态` 写库 500。0.34.0 的
+  `upsert_agent_status` SQL 里一行 `--` 注释被 Rust 续行符吃掉尾部，整句语法错误 ——
+  agent 的 `last_seen_at` / 内存 / CPU 全停更，数据清单自然也落不了库。
+- `CENTER_WEB_IMAGE_TAG` 不变（`v0.26.0-alpha`）：本次只动后端。
+
 ## [0.13.0-alpha] - 2026-11-09
 
 ### 变更
