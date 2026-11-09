@@ -16,6 +16,16 @@
 # 调用方约定（在 check-stack.sh 里设置）：
 #   GATE_RENDER_FILES  渲染产物清单（相对栈根），用于 `render.applied`
 #   GATE_EXTRA_GATES   可选的额外函数名，跑完通用门禁后调用（如 `gate_ops_prj_addr`）
+#   `run_local_gates <root> <only>`：`<only>` 只让该**前缀**的门禁生效（对应 `check-stack.sh
+#   --only <前缀>`）。`flow localize` 在⓿ 用 `--gate --only prereq`：那一刻包刚换完、还没重渲，
+#   也还没跑 `gops sys perms --apply`——任何读部署事实的门禁都会误报。
+#
+# 职责边界：**容器身份（gid）只能由 gops 推导**。`gops sys perms` 按服务从
+#   `docker compose config` 派生，会跳过以 root 运行的服务；这里再写一份
+#   （典型写法：`grep 'user:' | head -1`）必然会在 compose 新增 root 初始化服务时分叉。
+#   所以本文件只留“gops 推不出来的事实”（渲染时间 / 端口归属 / ops-prj 地址形态），
+#   以及**配置形状**（`secrets.declared`）——后者的诊断价值不在权限，而在
+#   `gops sec` 会静默回退到 `.galaxy` 报“未加载到任何密钥”。
 
 # 这两个标志由 check-stack.sh source 之后读取（本文件只写不读）
 # shellcheck disable=SC2034
@@ -24,23 +34,27 @@ GATE_FAIL=0
 GATE_WARN=0
 
 gate_fail() {
+  gate_selected "$1" || return 0
   printf '\033[31m[FAIL]\033[0m %-18s %s\n        → %s\n' "$1" "$2" "$3"
   GATE_FAIL=1
 }
 gate_warn() {
+  gate_selected "$1" || return 0
   printf '\033[33m[WARN]\033[0m %-18s %s\n        → %s\n' "$1" "$2" "$3"
   GATE_WARN=1
 }
 gate_info() { printf '  [INFO] %s\n' "$*"; }
 
-# 文件权限（十进制字符串，去掉前导 0）
-gate_stat_mode() {
-  local m
-  m=$(stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1" 2>/dev/null || true)
-  printf '%s' "${m#0}"
+# `--only <前缀>` 的过滤：只影响**上报**（门禁本身只读，算一遍不花钱）。
+# 前缀按 `.` 边界匹配：`--only prereq` 不会放行 `prereq_xxx`。
+gate_selected() {
+  [ -z "${GATE_ONLY:-}" ] && return 0
+  [ "$1" = "${GATE_ONLY}" ] && return 0
+  case "$1" in "${GATE_ONLY}".*) return 0 ;; esac
+  return 1
 }
 
-gate_stat_gid() { stat -c %g "$1" 2>/dev/null || stat -f %g "$1" 2>/dev/null || true; }
+# 文件 mtime（epoch 秒）
 gate_stat_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || true; }
 
 # RFC3339(Nano) → epoch 秒；解析不了就输出空（调用方据此跳过，不误报）
@@ -68,6 +82,12 @@ gate_project_name() {
 
 # ① 密钥文件 ↔ sys-prj.yml 声明（这就是 2026-11-05「gops sec 找不到密钥」的结构性根因：
 #    横切配置和功能挤在一个提交里，revert 把它带走了，而没有任何检查发现）
+#
+#    **只查“声明形状”，不查 mode / 属组**：那是 `gops sec fix`（secrets.mode）和
+#    `gops sys perms --apply`（容器 gid）的职责，二者都以 compose 为唯一来源。
+#    2026-11-08 网关栈升级回滚就是个教训：那份门禁用 `grep 'user:' | head -1` 自己推导
+#    容器 gid，而 compose 把 `user: "0:0"` 的卷初始化服务排在了业务服务前面——推导出 0，
+#    于是 0640/:999 的正确状态被判成不一致。**同一事实的第二个实现就是 bug。**
 gate_secrets() {
   local root="$1"
   local prj="$root/sys-prj.yml" sec="$root/.wist/sec-value.yml"
@@ -76,29 +96,6 @@ gate_secrets() {
     gate_fail "secrets.declared" \
       "有 .wist/sec-value.yml，但 sys-prj.yml 没声明 secrets:" \
       "补 secrets: {file: .wist/sec-value.yml, mode: \"0640\"}；否则 gops sec list/get 会回退旧路径（.galaxy/sec_value.yml）报「未加载到任何密钥」"
-    return 0
-  fi
-
-  local declared actual
-  declared=$(awk '/^secrets:/{f=1;next} f&&/^[^[:space:]]/{exit} f&&/^[[:space:]]+mode:/{print;exit}' "$prj" \
-    | sed -E 's/.*mode:[[:space:]]*"?([0-7]{3,4})"?.*/\1/')
-  actual=$(gate_stat_mode "$sec")
-  if [ -n "$declared" ] && [ -n "$actual" ] && [ "${actual#0}" != "${declared#0}" ]; then
-    gate_fail "secrets.mode" \
-      "密钥文件权限 ${actual} 与 sys-prj.yml 声明的 ${declared} 不一致（gops sec 会直接拒绝）" \
-      "gops sec fix --dry-run 看清计划后跑 gops sec fix"
-  fi
-
-  # 容器按**属组**读（compose 里 user: "999:999" + :ro 挂载）；macOS 桌面版不映射 uid/gid，跳过
-  if [ "$(uname -s)" = "Linux" ]; then
-    local gid
-    gid=$(grep -oE 'user:[[:space:]]*"?[0-9]+:[0-9]+"?' "$root/sys/docker-compose.yml" 2>/dev/null \
-      | head -1 | sed -E 's/.*:([0-9]+)"?/\1/')
-    if [ -n "$gid" ] && [ "$(gate_stat_gid "$sec")" != "$gid" ]; then
-      gate_fail "secrets.group" \
-        "密钥文件属组不是容器 gid(${gid}) —— 容器读不到（症状：token 解析不到 / 启动即失败）" \
-        "gops sys perms --apply（或 chgrp ${gid} .wist/sec-value.yml）"
-    fi
   fi
 }
 
@@ -155,6 +152,8 @@ gate_port_owners() {
 # 汇总：调用方按 GATE_FAIL/GATE_WARN 决定退出码
 run_local_gates() {
   local root="$1"
+  # 第二个参数是 `--only <前缀>` 的产物：只影响上报，不影响判据计算。
+  GATE_ONLY="${2:-}"
   gate_secrets "$root"
   # shellcheck disable=SC2086  # 清单里有空格分隔的多个路径，故意的
   gate_render_applied "$root" ${GATE_RENDER_FILES:-}

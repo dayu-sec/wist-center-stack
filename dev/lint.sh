@@ -23,7 +23,7 @@ if ! command -v shellcheck >/dev/null 2>&1; then
   exit 1
 fi
 
-files=(scripts/*.sh scripts/lib/*.sh dev/*.sh)
+files=(scripts/*.sh scripts/lib/*.sh dev/*.sh dev/tests/*.sh)
 
 echo "== shellcheck -S warning（错误 / 警告）：${#files[@]} 个脚本"
 shellcheck -S warning -f gcc "${files[@]}"

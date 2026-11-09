@@ -58,8 +58,17 @@ offline=0
 # （它们读的是容器启动时间 / 端口归属 / 密钥属组这类**部署事实**，改一次就发一次
 # crates.io 版本的成本太高）。
 export GATE_RENDER_FILES="configs/center/wist-center.toml configs/git-proxy/nginx.conf configs/web/nginx.conf identity/center/wist-center-pub.toml"
+# `--gate` 与本地门禁的 `--only <前缀>`（**只认空格形式**：stackcheck 本体不接受 `--only=`）
+# 一次扫完。为何要区分：本地门禁读的是**部署事实**（容器启动时间 / 端口 / 目录状态），
+# `flow localize` 在⓿ 用 `--only prereq` 时这些东西还没就绪——必须跟 stackcheck 本体同口径。
 gate_mode=0
-for arg in "$@"; do [ "$arg" = "--gate" ] && gate_mode=1; done
+gate_only=""
+prev=""
+for arg in "$@"; do
+  [ "$arg" = "--gate" ] && gate_mode=1
+  [ "$prev" = "--only" ] && gate_only="$arg"
+  prev="$arg"
+done
 
 if [ -x "$BIN" ]; then
   # 预编译件可能是别的架构（手工拷错 / 平台包拿错）：先自报版本，
@@ -71,7 +80,7 @@ if [ -x "$BIN" ]; then
       if [ "$offline" = 1 ]; then "$BIN" --root "$ROOT" --offline "$@"; else "$BIN" --root "$ROOT" "$@"; fi >"$gs_out" 2>&1 || rc=$?
       cat "$gs_out"
       . "${ROOT}/scripts/lib/local-gates.sh"
-      GATE_STACKCHECK_OUT="$gs_out" run_local_gates "$ROOT"
+      GATE_STACKCHECK_OUT="$gs_out" run_local_gates "$ROOT" "$gate_only"
       rm -f "$gs_out"
       # `--gate` 的约定是**只按阻断类 FAIL 判定**：WARN 必须返回 0 ——
       # gx.cmd 把任何非零当失败，WARN 返回 1 会让每次 localize 都回滚（2026-11-05 踩过）。
@@ -98,7 +107,7 @@ if [ -f "${ROOT}/tools/stackcheck/Cargo.toml" ] && command -v cargo >/dev/null 2
     if [ "$offline" = 1 ]; then cargo run --quiet --manifest-path "${ROOT}/tools/stackcheck/Cargo.toml" -- --root "$ROOT" --offline "$@"; else cargo run --quiet --manifest-path "${ROOT}/tools/stackcheck/Cargo.toml" -- --root "$ROOT" "$@"; fi >"$gs_out" 2>&1 || rc=$?
     cat "$gs_out"
     . "${ROOT}/scripts/lib/local-gates.sh"
-    GATE_STACKCHECK_OUT="$gs_out" run_local_gates "$ROOT"
+    GATE_STACKCHECK_OUT="$gs_out" run_local_gates "$ROOT" "$gate_only"
     rm -f "$gs_out"
     # `--gate` 只按阻断类 FAIL 判定；WARN 返回 0（gx.cmd 把非零当失败）
     if [ "$GATE_FAIL" = 1 ] || [ "$rc" = 2 ]; then exit 2; fi

@@ -28,3 +28,25 @@ jobs:
       - name: Ensure shellcheck
         run: command -v shellcheck >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y shellcheck)
       - run: ./dev/lint.sh
+
+  # 脚本回归（`dev/tests/*.test.sh`）：与网关栈同一口径 —— 必须有 macOS 那一路，
+  # bash 3.2 / LibreSSL / 默认 umask 的差异只在那里能复现。
+  shell-tests:
+    name: Shell regression (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run dev/tests
+        run: |
+          set -eu
+          fail=0
+          for t in dev/tests/*.test.sh; do
+            echo "::group::${t}"
+            if bash "${t}"; then echo "PASS ${t}"; else echo "::error file=${t}::${t} 失败"; fail=1; fi
+            echo "::endgroup::"
+          done
+          exit "${fail}"
