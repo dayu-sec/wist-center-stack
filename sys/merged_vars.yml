@@ -8,9 +8,15 @@ system:
 - name: GIT_PROXY_REGISTRY
   value: docker.io/library
 - name: CENTER_IMAGE_TAG
-  value: v0.34.1-alpha
+  value: v0.35.1-alpha
 - name: CENTER_WEB_IMAGE_TAG
-  value: v0.27.0-alpha
+  value: v0.28.1-alpha
+- name: EVIDENCE_ENABLED
+  value: 'false'
+- name: FIELD_API_URL
+  value: https://host.docker.internal:8088
+- name: EVIDENCE_CA_FILE
+  value: /wist-center/ca/evidence-ca.pem
 - name: VM_IMAGE_TAG
   value: v1.154.0
 - name: GIT_PROXY_IMAGE_TAG

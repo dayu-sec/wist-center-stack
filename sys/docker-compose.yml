@@ -145,6 +145,10 @@ services:
     image: ${CENTER_REGISTRY}/wist-center:${CENTER_IMAGE_TAG}
     user: "999:999"
     restart: unless-stopped
+    # 同机部署时经宿主访问计算区（field 栈）的对外入口：Docker Desktop 自带这个域名，
+    # Linux 宿主用 host-gateway 映射（field 的 WEB_BIND_IP 要改成宿主可达地址）。
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       WIST_CENTER_CONFIG: /wist-center/wist-center.toml
       WIST_CENTER_PUB_CONFIG: /wist-center/ca/wist-center-pub.toml

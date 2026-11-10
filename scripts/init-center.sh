@@ -61,6 +61,22 @@ WP_INFRA_REPO_URL="${WP_INFRA_REPO_URL:-}"
 # 程序访问凭据（wist-cred 验证方）：来自 vars 的 CREDENTIALS_ENABLED（'true' / 'false'）。
 CREDENTIALS_ENABLED="${CREDENTIALS_ENABLED:-false}"
 CREDENTIALS_REQUIRE_SIGNATURE="${CREDENTIALS_REQUIRE_SIGNATURE:-true}"
+# 调查报告读口（证据库经计算区 BFF）：来自 vars 的 EVIDENCE_ENABLED（'true' / 'false'）。
+# 关着 = 渲染时整段 `[evidence]` 省略（中心只显示任务状态，不报未解析变量）。
+EVIDENCE_ENABLED="${EVIDENCE_ENABLED:-false}"
+FIELD_API_URL="${FIELD_API_URL:-}"
+EVIDENCE_CA_FILE="${EVIDENCE_CA_FILE:-}"
+case "${EVIDENCE_ENABLED}" in
+  true|false) ;;
+  *)
+    echo "错误：EVIDENCE_ENABLED 只能是 'true' 或 'false'（当前：'${EVIDENCE_ENABLED}'）" >&2
+    exit 1
+    ;;
+esac
+if [[ "${EVIDENCE_ENABLED}" == "true" && -z "${FIELD_API_URL}" ]]; then
+  echo "错误：EVIDENCE_ENABLED=true 但 FIELD_API_URL 为空（计算区对外地址）" >&2
+  exit 1
+fi
 for _flag in "${CREDENTIALS_ENABLED}" "${CREDENTIALS_REQUIRE_SIGNATURE}"; do
   case "${_flag}" in
     true | false) ;;
@@ -293,7 +309,10 @@ cat >"${tmp}" <<EOF
   "wp_rules_repo": "${WP_RULES_REPO_URL}",
   "wp_infra_repo": "${WP_INFRA_REPO_URL}",
   "credentials_enabled": ${CREDENTIALS_ENABLED},
-  "credentials_require_signature": ${CREDENTIALS_REQUIRE_SIGNATURE}
+  "credentials_require_signature": ${CREDENTIALS_REQUIRE_SIGNATURE},
+  "evidence_enabled": ${EVIDENCE_ENABLED},
+  "field_api_url": "${FIELD_API_URL}",
+  "evidence_ca_file": "${EVIDENCE_CA_FILE}"
 }
 EOF
 # value.json 里有 DB 应用账号的口令（database_url），不能对其他用户可读：

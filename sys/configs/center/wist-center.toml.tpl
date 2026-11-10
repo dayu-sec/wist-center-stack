@@ -194,6 +194,19 @@ admin_roles = ["admin"]
 {{else}}require_signature = false
 {{/if}}
 
+# 调查报告读口：证据库经**计算区 BFF**（`wist-field-api`）。
+#
+# 为什么不直连证据服务：它的读监听（`/internal/evidence/*`）只在计算区 compose 网络内，
+# 对外面本来就是 BFF（浏览器也到不了内部口）。中心只认这一个入口。
+# 鉴权是 wist-cred 操作员令牌 `wcr_…`（来自 `.wist/sec-value.yml` 的 evidence_read_token）。
+# `EVIDENCE_ENABLED=false`（缺省）时整段省略 —— 中心只显示任务状态，不报未解析变量。
+{{#if evidence_enabled}}
+[evidence]
+endpoint = "{{field_api_url}}"
+read_token = "${SEC_EVIDENCE_READ_TOKEN}"
+{{#if evidence_ca_file}}ca_file = "{{evidence_ca_file}}"
+{{/if}}timeout_seconds = 10
+{{/if}}
 # 本进程自己的运行日志（env_logger，走 log facade）。
 # 落文件（相对本配置目录解析 → 已挂载的 /wist-center/logs/，自动建父目录），写满自轮转。
 # 注意：给了 `file` 就**不再**写 stderr（`docker logs` 看不到中心自身日志；打开失败会回落 stderr）。

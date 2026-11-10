@@ -3,6 +3,25 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.13.3-alpha] - 2026-11-10
+
+### 变更
+
+- 中心 `v0.35.1-alpha` / 前端 `v0.28.1-alpha`：新增「中心下发调查」。
+- **调查报告读口（可选）**：`EVIDENCE_ENABLED=true` 时渲染 `[evidence]`，中心经计算区 BFF
+  （field 栈 web → field-api，`GET /api/evidence/{cmd_id}`）读取报告元数据与正文；
+  鉴权令牌来自 `.wist/sec-value.yml` 的 `evidence_read_token`（`wcr_…`）。
+  缺省关闭 —— 中心只显示任务状态，不报未解析变量。
+- 新增变量：`EVIDENCE_ENABLED` / `FIELD_API_URL` / `EVIDENCE_CA_FILE`；center 服务加
+  `host.docker.internal:host-gateway`（Linux 宿主访问同机计算区）。
+
+### 升级注意
+
+- 计算区自签站点：把 field 栈的 `identity/web/public/web-ca.crt.pem` 放到本栈
+  `identity/center/evidence-ca.pem`（`identity/center` 只读挂在 `/wist-center/ca`）。
+- 上位能力（下发调查到 agentd）还需要**宿主侧 gwlinkd ≥ 0.22.0**；
+  旧 gwlinkd 下中心下发会回 409（`agent_investigate_unsupported`）。
+
 ## [0.13.2-alpha] - 2026-11-09
 
 ### 变更
