@@ -36,9 +36,9 @@ system:
   #   CENTER_IMAGE_TAG       wist-center 的 release tag
   #   CENTER_WEB_IMAGE_TAG   wist-center-web 的 release tag
   - name: CENTER_IMAGE_TAG
-    value: v0.35.1-alpha
+    value: v0.35.2-alpha
   - name: CENTER_WEB_IMAGE_TAG
-    value: v0.28.1-alpha
+    value: v0.28.2-alpha
   # ── 调查报告读口（证据库经计算区 BFF）─────────────────────────────────────
   # 中心**不直连证据服务**（它的读监听只在计算区 compose 网络内），而是调计算区的
   # 对外入口（field 栈 web → field-api）：`GET {FIELD_API_URL}/api/evidence/{cmd_id}`。
