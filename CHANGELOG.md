@@ -3,6 +3,28 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.14.0-alpha] - 2026-11-12
+
+### 变更
+
+- 中心 `v0.36.0-alpha` / 前端 `v0.30.0-alpha`：新增**开放面（第三方调查 API）**。
+  - 独立 listener `3104`（`${CENTER_OPEN_BIND_IP}:${CENTER_OPEN_HOST_PORT}`），只挂
+    `/api/v1/open/**`；与网关面 / 管理面 / 单 listener 模式都隔离。
+  - 控制台新增「接口可用性」页（`/interfaces`）：开放面探活 + 接口清单 + curl 示例。
+  - 新增变量：`CENTER_OPEN_ADDR`（容器内监听地址，**默认空 = 不开面**）、
+    `CENTER_OPEN_BIND_IP` / `CENTER_OPEN_HOST_PORT`（宿主映射）、
+    `CENTER_OPEN_PUBLIC_URL`（页面 curl 示例的对外地址，可留空）。
+
+### 升级注意
+
+- 开放面**默认关闭**，升级本身不会改现有行为。要开面就显式两步：先把
+  `CREDENTIALS_ENABLED` 打开并完成 `wist-cred` 接入，再填 `CENTER_OPEN_ADDR`
+  （如 `0.0.0.0:3104`）并把 `CENTER_OPEN_BIND_IP` 改成对外网卡。
+- **顺序不能反**：开放面依赖程序访问凭据（`[credentials]`）。配了 `CENTER_OPEN_ADDR`
+  但 `CREDENTIALS_ENABLED=false`（或 `known_roles` 缺 `investigation:run`），中心会**拒绝启动**。
+- 开放面对第三方暴露，建议只对必要来源放行 `3104`；令牌是 `wist-cred` 签发的
+  `wcr_…`（`roles` 含 `investigation:run`，`resources` 限定可调查的机器）。
+
 ## [0.13.4-alpha] - 2026-11-10
 
 ### 变更

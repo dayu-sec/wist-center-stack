@@ -36,9 +36,9 @@ system:
   #   CENTER_IMAGE_TAG       wist-center 的 release tag
   #   CENTER_WEB_IMAGE_TAG   wist-center-web 的 release tag
   - name: CENTER_IMAGE_TAG
-    value: v0.35.2-alpha
+    value: v0.36.0-alpha
   - name: CENTER_WEB_IMAGE_TAG
-    value: v0.28.2-alpha
+    value: v0.30.0-alpha
   # ── 调查报告读口（证据库经计算区 BFF）─────────────────────────────────────
   # 中心**不直连证据服务**（它的读监听只在计算区 compose 网络内），而是调计算区的
   # 对外入口（field 栈 web → field-api）：`GET {FIELD_API_URL}/api/evidence/{cmd_id}`。
@@ -101,6 +101,21 @@ system:
     value: 127.0.0.1
   - name: CENTER_ADMIN_HOST_PORT
     value: 3102
+  # 开放面（第三方调查 API）：独立 listener，只挂 `/api/v1/open/**`。
+  #   · **默认关闭**（`CENTER_OPEN_ADDR` 为空 = 不起 listener）。
+  #     开放面**依赖程序访问凭据**（`[credentials].enabled = true`）：配了地址但没凭据，
+  #     中心会拒启。所以必须是「先开 cred，再显式填 CENTER_OPEN_ADDR」的两步，
+  #     不能靠默认值把没准备凭据的现场打挂。
+  #   · 启用时填容器内监听地址（如 `0.0.0.0:3104`），并把 CENTER_OPEN_BIND_IP 改成对外网卡。
+  #   · CENTER_OPEN_PUBLIC_URL 只是页面拼 curl 示例的对外地址；留空 = 占位符。
+  - name: CENTER_OPEN_BIND_IP
+    value: 127.0.0.1
+  - name: CENTER_OPEN_HOST_PORT
+    value: 3104
+  - name: CENTER_OPEN_ADDR
+    value: ""
+  - name: CENTER_OPEN_PUBLIC_URL
+    value: ""
   # 中心前端入口（nginx 终止 TLS + 静态 + /api 反代到中心）。
   # 本机默认 2443；8443 留给 wist-gateway-stack 的 web，避免两栈同机冲突。
   - name: WEB_BIND_IP

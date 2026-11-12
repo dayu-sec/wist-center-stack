@@ -3,6 +3,7 @@
 # 端口约定（宿主:容器；宿主端口与 `*_BIND_IP` 见 sys/setting/vars.yml，现场在 ops-prj 的 `values/<系统名>/sys_value.yml` 覆盖）：
 #   **公网面（只这两个）**
 #   center           ${CENTER_API_HOST_PORT}:3100       网关面 HTTPS+mTLS（/api/v1/gateway/**）
+#   center           ${CENTER_OPEN_HOST_PORT}:3104     开放面（第三方调查 API，/api/v1/open/**）
 #   git-proxy        ${GIT_PROXY_HOST_PORT}:8443     Gateway 拉 CNB 仓库（只读 smart HTTP）
 #   **内网面（默认只绑 127.0.0.1）**
 #   center           ${CENTER_ADMIN_HOST_PORT}:3102 管理面（/api/v1/admin/**；浏览器经 web 反代）
@@ -157,6 +158,10 @@ services:
       WIST_CENTER_STACK_VERSION_FILE: /config/stack-version.txt
       WARP_INSIGHT_CENTER_SERVER_CERT_PATH: /wist-center/ca/control-center-server.crt
       WARP_INSIGHT_CENTER_SERVER_KEY_PATH: /wist-center/ca/control-center-server.key
+      # 开放面（第三方调查 API）：独立 listener，**默认关闭**（CENTER_OPEN_ADDR 为空 ≠ 不起 listener）。
+      # 开启前提是 [credentials] 已启用；配了地址却没有验证器，中心会拒启。
+      WARP_INSIGHT_CENTER_OPEN_ADDR: ${CENTER_OPEN_ADDR}
+      WARP_INSIGHT_CENTER_OPEN_PUBLIC_URL: ${CENTER_OPEN_PUBLIC_URL}
     volumes:
       - ${CENTER_CONFIG_DIR}/wist-center.toml:/wist-center/wist-center.toml:ro
       - ${CENTER_CONFIG_DIR}/state:/wist-center/state
@@ -173,6 +178,9 @@ services:
       #   3102 = 管理面（**内网**，`/api/v1/admin/**` + `/api/v1/version`；浏览器经 web 反代）
       #   3101 = 设备面 wparse-proxy（内网；同栈走 docker 网络，宿主端口仅供排障）
       - "${CENTER_API_BIND_IP}:${CENTER_API_HOST_PORT}:3100"
+      # 3104 = 开放面（**第三方**，`/api/v1/open/**`；独立 listener，不校客户端证书）。
+      # 默认 CENTER_OPEN_ADDR 为空 → 没有 listener，这个映射只是空闲；启用才真正对外。
+      - "${CENTER_OPEN_BIND_IP}:${CENTER_OPEN_HOST_PORT}:3104"
       - "${CENTER_ADMIN_BIND_IP}:${CENTER_ADMIN_HOST_PORT}:3102"
       - "${WPARSE_PROXY_BIND_IP}:${WPARSE_PROXY_HOST_PORT}:3101"
       # 3103 = 程序访问凭据（wist-cred 验证方；mTLS，内网）。默认只绑回环：
