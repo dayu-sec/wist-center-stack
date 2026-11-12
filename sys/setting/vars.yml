@@ -38,7 +38,7 @@ system:
   - name: CENTER_IMAGE_TAG
     value: v0.36.0-alpha
   - name: CENTER_WEB_IMAGE_TAG
-    value: v0.30.0-alpha
+    value: v0.30.1-alpha
   # ── 调查报告读口（证据库经计算区 BFF）─────────────────────────────────────
   # 中心**不直连证据服务**（它的读监听只在计算区 compose 网络内），而是调计算区的
   # 对外入口（field 栈 web → field-api）：`GET {FIELD_API_URL}/api/evidence/{cmd_id}`。
@@ -107,12 +107,21 @@ system:
   #     中心会拒启。所以必须是「先开 cred，再显式填 CENTER_OPEN_ADDR」的两步，
   #     不能靠默认值把没准备凭据的现场打挂。
   #   · 启用时填容器内监听地址（如 `0.0.0.0:3104`），并把 CENTER_OPEN_BIND_IP 改成对外网卡。
-  #   · CENTER_OPEN_PUBLIC_URL 只是页面拼 curl 示例的对外地址；留空 = 占位符。
+  #
+  # 对外地址**由域名生成**（不需要手写完整 URL）：
+  #   CENTER_OPEN_DOMAIN     开放面域名；留空 = 沿用网关面域名（`API_WGC_DOMAIN`，
+  #                          再留空 = `api.<WEB_WGC_DOMAIN>`）。生产现场用**真域名 + 真 DNS**，
+  #                          域名必须能解析到本机且在服务器证书 SAN 内。
+  #   CENTER_OPEN_PUBLIC_URL 显式覆盖：留空 = `https://<CENTER_OPEN_DOMAIN>:<CENTER_OPEN_HOST_PORT>`；
+  #                          只有「域名+端口不够」（NAT / 负载均衡 / 改变端口）时才填。
+  #   两个值都由 `scripts/init-center-pub.sh` 按变量推导后写入 `identity/center/.env`。
   - name: CENTER_OPEN_BIND_IP
     value: 127.0.0.1
   - name: CENTER_OPEN_HOST_PORT
     value: 3104
   - name: CENTER_OPEN_ADDR
+    value: ""
+  - name: CENTER_OPEN_DOMAIN
     value: ""
   - name: CENTER_OPEN_PUBLIC_URL
     value: ""

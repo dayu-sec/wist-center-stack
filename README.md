@@ -375,12 +375,16 @@ https://<wp-git>:18082/wp-infra
    curl -fsSLk '<cred 生成的一次性接入命令>' | bash -s -- \
      --dir ./identity/center/cred \
      --host 'center.internal' \
-     --advertise 'https://<cred 能访问到的中心地址>:3103/api/v1/internal/credentials' \
-     --roles 'admin,read'
+     --roles 'admin,read,investigation:run'
    ```
 
-   `--host` 会写进证书 SAN，必须与 cred 推送时使用的地址一致；`--advertise` 报给 cred 的
-   收数地址，端口与 `CREDENTIALS_HOST_PORT` 对齐。
+   `--host` 会写进证书 SAN，必须与 cred 推送时使用的名字一致（cred 连哪个名字，证书里就得有哪个）；
+   **收数地址不在命令行里**：它在 cred 的「认证系统」里登记（`https://<cred 能访问到的中心地址>:3103/api/v1/internal/credentials`），
+   端口与 `CREDENTIALS_HOST_PORT` 对齐。
+
+   > `--roles` 要带 `investigation:run`：不用的现场可以不带，但只要开开放面就必须有。
+   > 注意 `cred.toml` 是**这条命令被生成的那一刻**按 cred 里**已登记**的角色渲染的 ——
+   > 第一次带的 `--roles` 只更新 cred 侧注册表，本地文件还是旧角色；**再生成一张券重跑一次**才能落地。
 3. 打开开关（`values/<系统名>/sys_value.yml`）：`CREDENTIALS_ENABLED: 'true'`。
    跨主机部署时把 `CREDENTIALS_BIND_IP` 从 `127.0.0.1` 改成中心的内网网卡 IP。
 
@@ -408,6 +412,47 @@ https://<wp-git>:18082/wp-infra
 | 认证通过但角色不足 | 403 | `admin_role_required` |
 
 过期 / 撤销**不计入**暴力尝试，客户端轮询不会被锁死。
+
+### 开放面（第三方调查 API）
+
+中心可以**多起一个 listener**，只挂 `/api/v1/open/**`，给平台外的系统下发调查。它和网关面 /
+管理面 / 凭据入口都是**独立端口**，**不校客户端证书**（外部系统没有网关证书），身份只认
+`wist-cred` 签发的 `wcr_…`（角色 `investigation:run`）。
+
+```
+POST /api/v1/open/investigations      {"customer_id","host_ip","topic","external_ref"?} + Idempotency-Key
+GET  /api/v1/open/capabilities
+GET  /api/v1/open/investigation-grants?customer_id=&host_ip=
+GET  /api/v1/open/investigations/{command_id}
+GET  /api/v1/open/openapi.json        公开，无需令牌
+```
+
+**启用顺序不能反**（反了中心会拒启，`server.open_addr requires …`）：
+
+1. 先按上一节把 `CREDENTIALS_ENABLED` 打开、`wist-cred` 接入完成，且该 peer 的 roles **含
+   `investigation:run`**；
+2. 再在 `values/<系统名>/sys_value.yml` 里配开放面变量并 `gops sys localize && gops run start`。
+
+| 变量 | 默认 | 作用 |
+|---|---|---|
+| `CENTER_OPEN_ADDR` | `''` | **总开关**：容器内监听地址（如 `0.0.0.0:3104`），空 = 不开面 |
+| `CENTER_OPEN_BIND_IP` / `CENTER_OPEN_HOST_PORT` | `127.0.0.1` / `3104` | 宿主侧端口映射 |
+| `CENTER_OPEN_DOMAIN` | `''` | 开放面域名；**留空 = 沿用网关面域名**（`API_WGC_DOMAIN`，再留空 = `api.<WEB_WGC_DOMAIN>`） |
+| `CENTER_OPEN_PUBLIC_URL` | `''` | 显式覆盖对外地址；留空 = `https://<CENTER_OPEN_DOMAIN>:<CENTER_OPEN_HOST_PORT>` |
+
+对外地址**不用手写**：`scripts/init-center-pub.sh` 按上面两个变量推导后写入
+`identity/center/.env`（声明在 `identity/center/wist-center-pub.toml` 里是 `${CENTER_OPEN_PUBLIC_URL}`），
+换域名 / 换端口 / 关面都只改变量。生产现场用**真域名 + 真 DNS**，域名必须解析到中心、且在
+服务器证书 SAN 内。
+
+自检：控制台「接口可用性」（`/interfaces`）显示 `enabled` 与两条探活。探活是**中心自己回环**发起的，
+且第二条**刻意不带令牌**（期望 401，证明鉴权闸在工作）—— 所以探活**不需要**任何令牌。
+第三方令牌只在页面输入框（浏览器 sessionStorage，拼 curl 示例）或调用方自己保管，
+**不要**写进 `.wist/sec-value.yml`：那里只放本栈进程启动要用的密钥。
+
+> 跨主机时 `CREDENTIALS_BIND_IP` 要改成 cred 能到的地址；cred 侧的收数地址必须用**容器里能解析到中心**
+> 的名字。**不要**用宿主 `/etc/hosts` 解决 —— 容器的 `/etc/hosts` 与宿主无关，而写 `127.0.0.1` 在容器里
+> 指的是容器自己。没有 DNS 的孤立 lab 才用 compose 的 `extra_hosts: <名字>:host-gateway` 兜底。
 
 ### 前置：挂载文件
 

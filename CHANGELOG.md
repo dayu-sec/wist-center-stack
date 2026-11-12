@@ -3,6 +3,34 @@
 本仓是 `wist-center`（中心后端）+ `wist-center-web`（管理前端）的一站式编排。
 版本以仓库根 `version.txt` 为权威，标签 `v<version>-<channel>`。
 
+## [0.14.1-alpha] - 2026-11-13
+
+### 变更
+
+- 前端 `v0.30.1-alpha`：开放面的 curl 示例不再内联令牌真值，统一写成
+  `-H "authorization: Bearer ${WCR_TOKEN}"`；页面不再收集 / 存留令牌。
+- 开放面对外地址**由域名生成**，不再要现场手写完整 URL：
+  - 新增变量 `CENTER_OPEN_DOMAIN`（留空 = 沿用网关面域名 `API_WGC_DOMAIN`，再留空 = `api.<WEB_WGC_DOMAIN>`）；
+  - `CENTER_OPEN_PUBLIC_URL` 留空时由 `https://<域名>:<CENTER_OPEN_HOST_PORT>` 生成；只有
+    NAT / 负载均衡等「域名 + 端口不够」的现场才显式填它。
+  - 由 `scripts/init-center-pub.sh` 写入 `identity/center/.env`，声明在中心的现场态
+    （`wist-center-pub.toml` 的 `${CENTER_OPEN_PUBLIC_URL}`）；compose 不再传
+    `WARP_INSIGHT_CENTER_OPEN_PUBLIC_URL`（避免栈 `.env` 与现场态两份真相）。
+  - 关面（`CENTER_OPEN_ADDR` 为空）会**同时清空对外地址** —— 否则中心会因
+    「有 `open_public_url` 但没 `open_addr`」拒启。
+
+### 升级注意
+
+- 默认行为不变：`CENTER_OPEN_DOMAIN` 默认空，开口仍然需要显式填 `CENTER_OPEN_ADDR`。
+- 已按 0.14.0 手填过 `CENTER_OPEN_PUBLIC_URL` 的现场：可以删掉改用 `CENTER_OPEN_DOMAIN`，
+  也可以保留（非空即显式覆盖，不会被推平）。
+
+### 文档
+
+- README 新增「开放面（第三方调查 API）」小节：启用顺序、变量表、探活为什么不带令牌、
+  cred 收数地址与「不要用宿主 `/etc/hosts`」的坑；订正接入命令（`--advertise` 已不存在，
+  收数地址在 cred 的「认证系统」里登记）。
+
 ## [0.14.0-alpha] - 2026-11-12
 
 ### 变更

@@ -25,6 +25,12 @@
 #   端口必须带上：网关按 public_url **直连**中心后端（mTLS；见 docker-compose「网关直连 3100」）；
 #   443 那个口是 web 前端（终止 TLS、不透传客户端证书）。端口为 443 时省略。
 #
+# 开放面同样按域名生成（不需要现场手写 URL）：
+#   CENTER_OPEN_ADDR      容器内监听地址；空 = 不开面（此时对外地址也一并清空）
+#   CENTER_OPEN_DOMAIN    开放面域名；留空 = 沿用网关面域名（与上面同一套派生规则）
+#   CENTER_OPEN_HOST_PORT 宿主端口（默认 3104）→ `CENTER_OPEN_PUBLIC_URL = https://<域>:<端口>`
+#   CENTER_OPEN_PUBLIC_URL  显式覆盖；非空时以它为准（NAT / 负载均衡）
+#
 # 幂等：内容没变就不碰文件（不改 mtime）⇒ **可以每次 localize 都跑**。
 set -euo pipefail
 
@@ -35,28 +41,46 @@ ENV_FILE="${DIR}/.env"
 # 留空 = 派生 `api.<WEB_WGC_DOMAIN>`（与 init-center.sh 的 SAN 派生规则一致）。
 PUBLIC_API_URL_DOMAIN="${API_WGC_DOMAIN:-api.${WEB_WGC_DOMAIN:-}}"
 
+# 开放面：域名留空 = 沿用网关面域名（同一台机器、同一张服务器证书）。
+OPEN_DOMAIN="${CENTER_OPEN_DOMAIN:-${PUBLIC_API_URL_DOMAIN}}"
+
 command -v python3 >/dev/null 2>&1 || { echo "缺少 python3，无法生成现场态值" >&2; exit 1; }
 mkdir -p "${DIR}"
 
-# 值：按缺补齐（键不存在或值为空才写；非空一律保留）。
-python3 - "${ENV_FILE}" "${PUBLIC_API_URL_DOMAIN}" "${CENTER_API_HOST_PORT:-3100}" <<'PY'
+# 值：`CENTER_PUBLIC_URL` 按缺补齐（键不存在或值为空才写，非空一律保留）；
+#     `CENTER_OPEN_PUBLIC_URL` 是**纯派生值**，每次按变量重算覆盖（关面时写成空，不能留旧的）。
+python3 - "${ENV_FILE}" "${PUBLIC_API_URL_DOMAIN}" "${CENTER_API_HOST_PORT:-3100}" \
+  "${CENTER_OPEN_ADDR:-}" "${OPEN_DOMAIN}" "${CENTER_OPEN_HOST_PORT:-3104}" \
+  "${CENTER_OPEN_PUBLIC_URL:-}" <<'PY'
 import os, sys, tempfile
 
-target, domain, port = sys.argv[1:4]
-if not domain:
-    url = ""
-elif not port or port == "443":
-    url = f"https://{domain}"
-else:
-    url = f"https://{domain}:{port}"
+target, domain, port, open_addr, open_domain, open_port, open_url_override = sys.argv[1:8]
+
+
+def http_url(host, host_port):
+    if not host:
+        return ""
+    if not host_port or host_port == "443":
+        return f"https://{host}"
+    return f"https://{host}:{host_port}"
+
+
+url = http_url(domain, port)
+# 开放面：显式覆盖优先；否则域名+端口生成。没开面（CENTER_OPEN_ADDR 为空）就不给地址 ——
+# 中心对「有 open_public_url 但没 open_addr」是拒启的，这两项必须同生同死。
+open_url = ""
+if open_addr:
+    open_url = open_url_override or http_url(open_domain, open_port)
 
 HEADER = "\n".join(
     [
         "# wist-center 现场态**值** —— 与同目录 wist-center-pub.toml 里的 ${VAR} 一一对应。",
-        "# 由 scripts/init-center-pub.sh 按缺写入（键不存在或值为空才写，非空一律保留）；升级 / 重渲不动它。",
+        "# 由 scripts/init-center-pub.sh 生成：CENTER_PUBLIC_URL 按缺写入（非空一律保留），",
+        "# CENTER_OPEN_PUBLIC_URL 每次按 CENTER_OPEN_* 变量重算（关面即清空）。",
     ]
 )
-DESIRED = [("CENTER_PUBLIC_URL", url)]
+FILL = [("CENTER_PUBLIC_URL", url)]
+SYNC = [("CENTER_OPEN_PUBLIC_URL", open_url)]
 
 
 def unquote(value):
@@ -77,32 +101,58 @@ def parse(text):
     return found
 
 
+def index_of(lines, key):
+    for idx, raw in enumerate(lines):
+        head, sep, _ = raw.partition("=")
+        if sep and head.strip() == key:
+            return idx
+    return None
+
+
 if os.path.exists(target):
     original = open(target, encoding="utf-8").read()
     existing = parse(original)
     lines = original.splitlines()
+    # ① 先把头注释换成当前脚本的说法（老文件里的旧描述不要留着误导人）；
+    #    必须在改值**之前**做，否则归一化会把 FILL / SYNC 的结果覆盖掉。
+    if lines and lines[0].startswith("# wist-center 现场态"):
+        idx = 0
+        while idx < len(lines) and lines[idx].startswith("#"):
+            idx += 1
+        while idx < len(lines) and lines[idx].strip() == "":
+            idx += 1
+        lines = HEADER.splitlines() + [""] + lines[idx:]
     changed = False
-    for key, value in DESIRED:
-        current = existing.get(key)
-        if current is None:
+    # ② 按缺补齐：键不存在或值为空才写，非空一律保留（现场手改过的值优先）。
+    for key, value in FILL:
+        idx = index_of(lines, key)
+        if idx is None:
             if value == "":
                 continue  # 没有域名时不写空串 → 让声明里的 :-默认值生效
             lines.append(f"{key}={value}")
             changed = True
-        elif current == "" and value != "":
-            for idx, raw in enumerate(lines):
-                head, sep, _ = raw.partition("=")
-                if sep and head.strip() == key:
-                    lines[idx] = f"{key}={value}"
-                    break
+        elif existing.get(key) == "" and value != "":
+            lines[idx] = f"{key}={value}"
+            changed = True
+    # ③ 派生值始终同步：空也要写下来 —— 关面后如果留着旧地址，
+    #    中心会因「有 open_public_url 但没 open_addr」拒启。
+    for key, value in SYNC:
+        idx = index_of(lines, key)
+        if idx is None:
+            lines.append(f"{key}={value}")
+            changed = True
+        elif unquote(lines[idx].partition("=")[2].strip()) != value:
+            lines[idx] = f"{key}={value}"
             changed = True
     text = "\n".join(lines) + "\n"
     if not changed or text == original:
         print(f"  现场态值与当前一致，跳过：{target}")
         sys.exit(0)
-    message = f"  已补齐现场态值：{target}"
+    message = f"  已重算现场态值：{target}"
 else:
-    written = [f"{key}={value}" for key, value in DESIRED if value]
+    written = [f"{key}={value}" for key, value in FILL if value] + [
+        f"{key}={value}" for key, value in SYNC
+    ]
     text = HEADER + "\n\n" + "\n".join(written) + ("\n" if written else "")
     message = f"  已生成现场态值：{target}"
 

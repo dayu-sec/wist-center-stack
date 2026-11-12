@@ -160,8 +160,9 @@ services:
       WARP_INSIGHT_CENTER_SERVER_KEY_PATH: /wist-center/ca/control-center-server.key
       # 开放面（第三方调查 API）：独立 listener，**默认关闭**（CENTER_OPEN_ADDR 为空 ≠ 不起 listener）。
       # 开启前提是 [credentials] 已启用；配了地址却没有验证器，中心会拒启。
+      # 对外地址不在这里：它由域名派生，走 WIST_CENTER_PUB_CONFIG 声明里的
+      # `${CENTER_OPEN_PUBLIC_URL}`（真值在 identity/center/.env）。
       WARP_INSIGHT_CENTER_OPEN_ADDR: ${CENTER_OPEN_ADDR}
-      WARP_INSIGHT_CENTER_OPEN_PUBLIC_URL: ${CENTER_OPEN_PUBLIC_URL}
     volumes:
       - ${CENTER_CONFIG_DIR}/wist-center.toml:/wist-center/wist-center.toml:ro
       - ${CENTER_CONFIG_DIR}/state:/wist-center/state

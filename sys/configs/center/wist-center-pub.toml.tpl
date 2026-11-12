@@ -12,3 +12,7 @@
 [server]
 # 中心对外地址：用于生成网关初始化 URL，必须落在控制中心服务器证书的 SAN 内。
 public_url = "${CENTER_PUBLIC_URL:-https://center.warpinsight.example}"
+# 开放面（第三方调查 API）对外地址：控制台 curl 示例 / 第三方接入用它。
+# 留空 = 不开面（或没拿到域名）；真值由 scripts/init-center-pub.sh 按 CENTER_OPEN_* 变量推导后
+# 写进同目录 `.env` —— 域名换、端口换、关面，都只改栈的变量，不手改这个文件。
+open_public_url = "${CENTER_OPEN_PUBLIC_URL:-}"
