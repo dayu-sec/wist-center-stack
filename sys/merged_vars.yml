@@ -8,9 +8,9 @@ system:
 - name: GIT_PROXY_REGISTRY
   value: docker.io/library
 - name: CENTER_IMAGE_TAG
-  value: v0.36.0-alpha
+  value: v0.37.0-alpha
 - name: CENTER_WEB_IMAGE_TAG
-  value: v0.30.1-alpha
+  value: v0.31.0-alpha
 - name: EVIDENCE_ENABLED
   value: 'false'
 - name: FIELD_API_URL
